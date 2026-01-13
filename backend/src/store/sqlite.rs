@@ -169,14 +169,12 @@ impl SqliteStore {
 
     pub fn execution_messages_next_sequence(&self, execution_id: &str) -> Result<i32, AppError> {
         let conn = self.open()?;
-        let next: Option<i32> = conn
-            .query_row(
-                "SELECT MAX(sequence) + 1 FROM execution_messages WHERE execution_id=?1;",
-                params![execution_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        Ok(next.unwrap_or(1))
+        let next: i32 = conn.query_row(
+            "SELECT IFNULL(MAX(sequence), 0) + 1 FROM execution_messages WHERE execution_id=?1;",
+            params![execution_id],
+            |row| row.get(0),
+        )?;
+        Ok(next)
     }
 
     fn open(&self) -> Result<Connection, AppError> {

@@ -7,7 +7,18 @@ export function isTauriApp() {
 
 export async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<T>(command, args)
+  
+  // Tauri v2 expects camelCase for argument names if the Rust side uses snake_case.
+  // We convert keys here to maintain compatibility with existing snake_case code.
+  const camelArgs: Record<string, unknown> = {}
+  if (args) {
+    for (const key in args) {
+      const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase())
+      camelArgs[camelKey] = args[key]
+    }
+  }
+
+  return invoke<T>(command, camelArgs)
 }
 
 export async function tauriListen<TPayload>(

@@ -11,7 +11,7 @@ export default function ExecutionPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const teamId = searchParams.get('team')
+  const teamId = searchParams.get('team') || searchParams.get('team_id')
 
   const [chatInput, setChatInput] = useState('')
   const [clientMessages, setClientMessages] = useState<any[]>([])
@@ -20,13 +20,14 @@ export default function ExecutionPage() {
   const [executionId, setExecutionId] = useState<string | null>(id || null)
   const autoStartedRef = useRef(false)
 
-  const { data: execution, isLoading } = useExecution(executionId || '')
+  const effectiveId = id || executionId
+  const { data: execution, isLoading } = useExecution(effectiveId || '')
   const createExecution = useCreateExecution()
   const controlExecution = useControlExecution()
   const deleteExecution = useDeleteExecution()
   const llm = buildExecutionLLMConfig()
   const { messages, status: streamStatus, error: streamError, sendFollowup, reconnect } =
-    useExecutionSocket(executionId)
+    useExecutionSocket(effectiveId)
 
   const baseMessages = useMemo(() => {
     const merged = new Map<string, any>()
@@ -58,15 +59,15 @@ export default function ExecutionPage() {
   }, [id])
 
   useEffect(() => {
-    if (executionId) {
-      localStorage.setItem('agent-team:lastExecutionId', executionId)
+    if (effectiveId) {
+      localStorage.setItem('agent-team:lastExecutionId', effectiveId)
       return
     }
     if (!id && !teamId) {
       const last = localStorage.getItem('agent-team:lastExecutionId')
       if (last) navigate(`/execution/${last}`)
     }
-  }, [executionId, id, teamId, navigate])
+  }, [effectiveId, id, teamId, navigate])
 
   useEffect(() => {
     // If we enter from a team (e.g. /execution?team=...), create an execution immediately
@@ -75,7 +76,11 @@ export default function ExecutionPage() {
     if (id) return
     if (executionId) return
     if (autoStartedRef.current) return
-    if (!llm) return
+    
+    if (!llm) {
+      setStartError('需要先在 “API 配置” 里创建默认配置并填写 API Key。')
+      return
+    }
 
     autoStartedRef.current = true
     setStartError(null)
@@ -88,7 +93,7 @@ export default function ExecutionPage() {
           llm,
         })
         setExecutionId(result.id)
-        navigate(`/execution/${result.id}?team=${teamId}`)
+        navigate(`/execution/${result.id}?team=${teamId}`, { replace: true })
       } catch (e: any) {
         autoStartedRef.current = false
         const detail = e?.response?.data?.detail
@@ -98,8 +103,8 @@ export default function ExecutionPage() {
   }, [createExecution, executionId, id, llm, navigate, teamId])
 
   const handleControl = async (action: string) => {
-    if (!executionId) return
-    await controlExecution.mutateAsync({ id: executionId, action })
+    if (!effectiveId) return
+    await controlExecution.mutateAsync({ id: effectiveId, action })
   }
 
   const handleNewDiscussion = async () => {
@@ -131,13 +136,13 @@ export default function ExecutionPage() {
   }
 
   const handleDeleteDiscussion = async () => {
-    if (!executionId) return
+    if (!effectiveId) return
     if (!confirm('确定删除当前讨论？删除后无法恢复。')) return
 
     try {
-      await deleteExecution.mutateAsync(executionId)
+      await deleteExecution.mutateAsync(effectiveId)
       const last = localStorage.getItem('agent-team:lastExecutionId')
-      if (last === executionId) localStorage.removeItem('agent-team:lastExecutionId')
+      if (last === effectiveId) localStorage.removeItem('agent-team:lastExecutionId')
       setClientMessages([])
       setExecutionId(null)
       navigate('/teams')
@@ -148,7 +153,7 @@ export default function ExecutionPage() {
   }
 
   const handleFollowup = async () => {
-    if (!executionId || !chatInput.trim()) return
+    if (!effectiveId || !chatInput.trim()) return
     if (!execution) return
 
     const text = chatInput.trim()
@@ -164,7 +169,7 @@ export default function ExecutionPage() {
       setClientMessages((prev) => [
         ...prev,
         {
-          id: `${executionId}-sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          id: `${effectiveId}-sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           sequence: 0,
           round: 0,
           phase: 'error',
@@ -184,15 +189,43 @@ export default function ExecutionPage() {
     setIsSendingFollowup(false)
   }
 
-  if (!executionId) {
+  if (!effectiveId) {
     return (
       <div className="flex items-center justify-center h-screen font-pixel">
         <div className="card w-full max-w-lg">
           <h2 className="text-xl font-press text-white mb-4">讨论</h2>
-          <p className="text-sm text-gray-400 mb-8 uppercase tracking-tighter">从团队页面选择一个团队开始讨论。</p>
-          <button className="btn btn-primary w-full" onClick={() => navigate('/teams')}>
-            去选择团队
-          </button>
+          
+          {teamId && !llm ? (
+            <div className="mb-8">
+              <p className="text-sm text-yellow-500 mb-4 uppercase tracking-tighter">
+                需要先配置 API Key 才能开始讨论。
+              </p>
+              <button className="btn btn-primary w-full" onClick={() => navigate('/models')}>
+                去配置 API
+              </button>
+            </div>
+          ) : startError ? (
+            <div className="mb-8">
+              <p className="text-sm text-red-500 mb-4 uppercase tracking-tighter">
+                启动讨论失败: {startError}
+              </p>
+              <button className="btn btn-primary w-full" onClick={() => navigate('/teams')}>
+                返回团队列表
+              </button>
+            </div>
+          ) : (teamId || createExecution.isPending) ? (
+            <div className="text-center py-8">
+              <div className="text-gray-400 uppercase tracking-widest animate-pulse mb-4">正在启动讨论...</div>
+              <p className="text-[10px] text-gray-500 uppercase">正在准备 AGENT 团队和工作空间</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-gray-400 mb-8 uppercase tracking-tighter">从团队页面选择一个团队开始讨论。</p>
+              <button className="btn btn-primary w-full" onClick={() => navigate('/teams')}>
+                去选择团队
+              </button>
+            </>
+          )}
         </div>
       </div>
     )
@@ -288,7 +321,7 @@ export default function ExecutionPage() {
       <div className="flex-1 overflow-hidden flex bg-[#1a1a1a]">
         {isTauriApp() && (
           <ExecutionWorkspacePanel
-            executionId={executionId}
+            executionId={effectiveId}
             initialWorkspacePath={execution.workspace_path}
           />
         )}
@@ -344,11 +377,11 @@ export default function ExecutionPage() {
                   void handleFollowup()
                 }
               }}
-              disabled={!executionId || isSendingFollowup}
+              disabled={!effectiveId || isSendingFollowup}
             />
             <button
               className="btn btn-primary p-3"
-              disabled={!chatInput.trim() || !executionId || isSendingFollowup}
+              disabled={!chatInput.trim() || !effectiveId || isSendingFollowup}
               onClick={() => void handleFollowup()}
             >
               <Send className="w-6 h-6" />

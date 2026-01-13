@@ -154,9 +154,6 @@ function TeamCard({
         </button>
         {menuOpen && (
           <div className="absolute right-0 mt-2 bg-[#1a1a1a] border-4 border-black shadow-pixel py-0 min-w-[140px] z-10">
-            <button onClick={onStart} className="w-full px-4 py-3 text-left text-sm text-green-400 hover:bg-green-600 hover:text-white flex items-center border-b-2 border-black last:border-b-0 uppercase tracking-tighter">
-              <Play className="w-4 h-4 mr-3" /> 开始讨论
-            </button>
             <button onClick={onEdit} className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-primary-600 hover:text-white flex items-center border-b-2 border-black last:border-b-0 uppercase tracking-tighter">
               <Edit className="w-4 h-4 mr-3" /> 编辑
             </button>
@@ -183,7 +180,7 @@ function TeamCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-[10px] font-press">
+      <div className="flex items-center justify-between text-[10px] font-press mb-6">
         <div className="flex items-center gap-2">
           <span className={`px-2 py-1 border-2 border-black shadow-pixel-sm ${modeColors[team.collaboration_mode] || modeColors.custom}`}>
             {modeLabels[team.collaboration_mode] || team.collaboration_mode}
@@ -196,6 +193,14 @@ function TeamCard({
         </div>
         <span className="text-gray-500 uppercase">USED: {team.usage_count}</span>
       </div>
+
+      <button
+        onClick={onStart}
+        className="w-full btn btn-primary flex items-center justify-center py-3 font-press text-xs tracking-tighter"
+      >
+        <Play className="w-4 h-4 mr-2 fill-current" />
+        开始讨论
+      </button>
     </div>
   )
 }
