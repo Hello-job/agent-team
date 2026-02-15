@@ -1,24 +1,27 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Send, Pause, Play, Square } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Send, Pause, Play, Square, MessageSquare } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useExecution, useCreateExecution, useControlExecution, useDeleteExecution, useExecutionSocket } from '@/hooks'
 import { ExecutionChat } from '@/components/Execution'
 import { buildExecutionLLMConfig } from '@/services/modelConfigStore'
-import { isTauriApp } from '@/services/tauri'
+import { isTauriApp, tauriConfirm } from '@/services/tauri'
 import ExecutionWorkspacePanel from '@/components/Execution/ExecutionWorkspacePanel'
+import { useToast } from '@/components/Common/Toast'
 
 export default function ExecutionPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const teamId = searchParams.get('team') || searchParams.get('team_id')
+  const { toast } = useToast()
 
   const [chatInput, setChatInput] = useState('')
+  const [initialInput, setInitialInput] = useState('')
   const [clientMessages, setClientMessages] = useState<any[]>([])
   const [isSendingFollowup, setIsSendingFollowup] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [executionId, setExecutionId] = useState<string | null>(id || null)
-  const autoStartedRef = useRef(false)
+  const [isCreating, setIsCreating] = useState(false)
 
   const effectiveId = id || executionId
   const { data: execution, isLoading } = useExecution(effectiveId || '')
@@ -69,42 +72,40 @@ export default function ExecutionPage() {
     }
   }, [effectiveId, id, teamId, navigate])
 
-  useEffect(() => {
-    // If we enter from a team (e.g. /execution?team=...), create an execution immediately
-    // so users always land in the discussion UI.
-    if (!teamId) return
-    if (id) return
-    if (executionId) return
-    if (autoStartedRef.current) return
-    
+  const handleStartDiscussion = async () => {
+    if (!teamId || !initialInput.trim()) return
     if (!llm) {
-      setStartError('需要先在 “API 配置” 里创建默认配置并填写 API Key。')
+      setStartError('需要先在 "API 配置" 里创建默认配置并填写 API Key。')
       return
     }
 
-    autoStartedRef.current = true
+    setIsCreating(true)
     setStartError(null)
-    void (async () => {
-      try {
-        const result = await createExecution.mutateAsync({
-          team_id: teamId,
-          input: '',
-          title: undefined,
-          llm,
-        })
-        setExecutionId(result.id)
-        navigate(`/execution/${result.id}?team=${teamId}`, { replace: true })
-      } catch (e: any) {
-        autoStartedRef.current = false
-        const detail = e?.response?.data?.detail
-        setStartError(typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : e?.message || '创建执行失败')
-      }
-    })()
-  }, [createExecution, executionId, id, llm, navigate, teamId])
+    try {
+      const result = await createExecution.mutateAsync({
+        team_id: teamId,
+        input: initialInput.trim(),
+        title: undefined,
+        llm,
+      })
+      setExecutionId(result.id)
+      navigate(`/execution/${result.id}?team=${teamId}`, { replace: true })
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail
+      setStartError(typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : e?.message || '创建执行失败')
+      toast('error', '启动讨论失败')
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   const handleControl = async (action: string) => {
     if (!effectiveId) return
-    await controlExecution.mutateAsync({ id: effectiveId, action })
+    try {
+      await controlExecution.mutateAsync({ id: effectiveId, action })
+    } catch (e: any) {
+      toast('error', e?.message || `操作 ${action} 失败`)
+    }
   }
 
   const handleNewDiscussion = async () => {
@@ -113,31 +114,18 @@ export default function ExecutionPage() {
       navigate('/teams')
       return
     }
-    if (!llm) {
-      setStartError('需要先在“API配置”里创建默认配置并填写 API Key。')
-      return
-    }
-
+    // Reset to initial input state for the same team
+    setExecutionId(null)
+    setClientMessages([])
+    setInitialInput('')
     setStartError(null)
-    try {
-      const result = await createExecution.mutateAsync({
-        team_id: resolvedTeamId,
-        input: '',
-        title: undefined,
-        llm,
-      })
-      setClientMessages([])
-      setExecutionId(result.id)
-      navigate(`/execution/${result.id}?team=${resolvedTeamId}`)
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail
-      setStartError(typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : e?.message || '创建执行失败')
-    }
+    navigate(`/execution?team=${resolvedTeamId}`)
   }
 
   const handleDeleteDiscussion = async () => {
     if (!effectiveId) return
-    if (!confirm('确定删除当前讨论？删除后无法恢复。')) return
+    const confirmed = await tauriConfirm('确定删除当前讨论？删除后无法恢复。', '删除讨论')
+    if (!confirmed) return
 
     try {
       await deleteExecution.mutateAsync(effectiveId)
@@ -145,10 +133,12 @@ export default function ExecutionPage() {
       if (last === effectiveId) localStorage.removeItem('agent-team:lastExecutionId')
       setClientMessages([])
       setExecutionId(null)
+      toast('success', '讨论已删除')
       navigate('/teams')
     } catch (e: any) {
       const detail = e?.response?.data?.detail
       setStartError(typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : e?.message || '删除失败')
+      toast('error', '删除讨论失败')
     }
   }
 
@@ -185,16 +175,18 @@ export default function ExecutionPage() {
           created_at: new Date().toISOString(),
         },
       ])
+      toast('error', '追问失败: WebSocket 未连接')
     }
     setIsSendingFollowup(false)
   }
 
+  // Show initial input form when coming from a team but no execution yet
   if (!effectiveId) {
     return (
       <div className="flex items-center justify-center h-screen font-pixel">
         <div className="card w-full max-w-lg">
           <h2 className="text-xl font-press text-white mb-4">讨论</h2>
-          
+
           {teamId && !llm ? (
             <div className="mb-8">
               <p className="text-sm text-yellow-500 mb-4 uppercase tracking-tighter">
@@ -209,14 +201,51 @@ export default function ExecutionPage() {
               <p className="text-sm text-red-500 mb-4 uppercase tracking-tighter">
                 启动讨论失败: {startError}
               </p>
+              <button className="btn btn-secondary w-full mb-3" onClick={() => setStartError(null)}>
+                重试
+              </button>
               <button className="btn btn-primary w-full" onClick={() => navigate('/teams')}>
                 返回团队列表
               </button>
             </div>
-          ) : (teamId || createExecution.isPending) ? (
-            <div className="text-center py-8">
-              <div className="text-gray-400 uppercase tracking-widest animate-pulse mb-4">正在启动讨论...</div>
-              <p className="text-[10px] text-gray-500 uppercase">正在准备 AGENT 团队和工作空间</p>
+          ) : teamId ? (
+            <div>
+              <p className="text-sm text-gray-400 mb-6 uppercase tracking-tighter">
+                输入讨论主题，让 Agent 团队开始协作。
+              </p>
+              <div className="bg-black/20 p-4 border-2 border-black mb-6">
+                <label className="label uppercase tracking-tighter mb-2">讨论主题</label>
+                <textarea
+                  className="input w-full h-32"
+                  placeholder="例如: 设计一个用户认证系统的技术方案..."
+                  value={initialInput}
+                  onChange={(e) => setInitialInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && initialInput.trim()) {
+                      e.preventDefault()
+                      void handleStartDiscussion()
+                    }
+                  }}
+                  autoFocus
+                />
+                <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-tight">
+                  CMD+ENTER 快速开始
+                </p>
+              </div>
+              <button
+                className="btn btn-primary w-full flex items-center justify-center"
+                disabled={!initialInput.trim() || isCreating}
+                onClick={() => void handleStartDiscussion()}
+              >
+                {isCreating ? (
+                  <span className="animate-pulse">正在启动讨论...</span>
+                ) : (
+                  <>
+                    <MessageSquare className="w-5 h-5 mr-2" />
+                    开始讨论
+                  </>
+                )}
+              </button>
             </div>
           ) : (
             <>
@@ -349,7 +378,7 @@ export default function ExecutionPage() {
         <div className="p-6 border-t-4 border-black bg-[#2d2d2d]">
           {!llm && (
             <div className="mb-4 text-xs font-press text-yellow-300 bg-yellow-900/50 border-2 border-yellow-500 p-4 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
-              需要先在 “API配置” 里创建默认配置并填写 API KEY。
+              需要先在 "API配置" 里创建默认配置并填写 API KEY。
               <button
                 type="button"
                 className="ml-3 underline text-yellow-200 hover:text-yellow-100"

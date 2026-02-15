@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Plus, GripVertical, Trash2 } from 'lucide-react'
 import type { Team, TeamCreate, AgentListItem } from '@/types'
 import { useCreateTeam, useUpdateTeam, useAgents } from '@/hooks'
+import { useToast } from '@/components/Common/Toast'
 
 interface Props {
   team?: Team | null
@@ -13,6 +14,8 @@ export default function TeamForm({ team, onClose }: Props) {
   const createTeam = useCreateTeam()
   const updateTeam = useUpdateTeam()
   const { data: agentsData } = useAgents({ page_size: 100 })
+  const { toast } = useToast()
+  const [formError, setFormError] = useState<string | null>(null)
 
   const [form, setForm] = useState<TeamCreate>({
     name: team?.name || '',
@@ -26,12 +29,21 @@ export default function TeamForm({ team, onClose }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isEdit && team) {
-      await updateTeam.mutateAsync({ id: team.id, data: form })
-    } else {
-      await createTeam.mutateAsync(form)
+    setFormError(null)
+    try {
+      if (isEdit && team) {
+        await updateTeam.mutateAsync({ id: team.id, data: form })
+        toast('success', '团队已更新')
+      } else {
+        await createTeam.mutateAsync(form)
+        toast('success', '团队已创建')
+      }
+      onClose()
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || '保存失败'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      toast('error', '保存团队失败')
     }
-    onClose()
   }
 
   const addMember = (agentId: string) => {
@@ -151,6 +163,11 @@ export default function TeamForm({ team, onClose }: Props) {
           </div>
 
           <div className="flex justify-end gap-4 pt-6 border-t-4 border-black">
+            {formError && (
+              <div className="w-full mb-4 text-xs font-press text-red-300 bg-red-900/50 border-2 border-red-500 p-3 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
+                {formError}
+              </div>
+            )}
             <button type="button" onClick={onClose} className="btn btn-secondary">
               CANCEL
             </button>

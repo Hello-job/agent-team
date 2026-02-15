@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { Plus, Search, Bot, MoreVertical, Copy, Trash2, Edit } from 'lucide-react'
-import { useAgents, useDeleteAgent, useDuplicateAgent } from '@/hooks'
+import { useAgents, useDeleteAgent, useDuplicateAgent, useDebounce } from '@/hooks'
 import { AgentForm } from '@/components/Agent'
 import type { Agent, AgentListItem } from '@/types'
 import { agentApi } from '@/services/api'
+import { useToast } from '@/components/Common/Toast'
+import { tauriConfirm } from '@/services/tauri'
 
 export default function AgentsPage() {
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editAgent, setEditAgent] = useState<Agent | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const debouncedSearch = useDebounce(search, 300)
 
-  const { data, isLoading } = useAgents({ search: search || undefined })
+  const { data, isLoading } = useAgents({ search: debouncedSearch || undefined })
   const deleteAgent = useDeleteAgent()
   const duplicateAgent = useDuplicateAgent()
+  const { toast } = useToast()
 
   const handleEdit = async (agent: AgentListItem) => {
     const fullAgent = await agentApi.get(agent.id)
@@ -23,14 +27,25 @@ export default function AgentsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('确定删除此 Agent?')) {
-      await deleteAgent.mutateAsync(id)
+    const confirmed = await tauriConfirm('确定删除此 Agent?', '删除 Agent')
+    if (confirmed) {
+      try {
+        await deleteAgent.mutateAsync(id)
+        toast('success', 'Agent 已删除')
+      } catch (err: any) {
+        toast('error', err?.message || '删除失败')
+      }
     }
     setMenuOpen(null)
   }
 
   const handleDuplicate = async (id: string) => {
-    await duplicateAgent.mutateAsync({ id })
+    try {
+      await duplicateAgent.mutateAsync({ id })
+      toast('success', 'Agent 已复制')
+    } catch (err: any) {
+      toast('error', err?.message || '复制失败')
+    }
     setMenuOpen(null)
   }
 
@@ -62,6 +77,12 @@ export default function AgentsPage() {
 
       {isLoading ? (
         <div className="text-center py-12 text-gray-400 uppercase">加载中...</div>
+      ) : data?.items.length === 0 && debouncedSearch ? (
+        <div className="card text-center py-12">
+          <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-press text-white mb-2">没有找到匹配的 AGENT</h3>
+          <p className="text-gray-400 text-sm uppercase tracking-tight">尝试其他关键词，或清空搜索</p>
+        </div>
       ) : data?.items.length === 0 ? (
         <div className="card text-center py-12">
           <Bot className="w-16 h-16 text-gray-600 mx-auto mb-6" />

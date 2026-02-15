@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import type { ModelConfig, ModelConfigCreate, ModelConfigUpdate } from '@/types';
-import { useCreateModelConfig, useUpdateModelConfig, useTestModelConfig } from '@/hooks';
+import { useState } from 'react'
+import { X } from 'lucide-react'
+import type { ModelConfig, ModelConfigCreate, ModelConfigUpdate } from '@/types'
+import { useCreateModelConfig, useUpdateModelConfig, useTestModelConfig } from '@/hooks'
+import { useToast } from '@/components/Common/Toast'
 
 interface Props {
   config?: ModelConfig | null;
@@ -9,10 +10,12 @@ interface Props {
 }
 
 export default function ModelConfigForm({ config, onClose }: Props) {
-  const isEdit = !!config;
-  const createModelConfig = useCreateModelConfig();
-  const updateModelConfig = useUpdateModelConfig();
-  const testModelConfig = useTestModelConfig();
+  const isEdit = !!config
+  const createModelConfig = useCreateModelConfig()
+  const updateModelConfig = useUpdateModelConfig()
+  const testModelConfig = useTestModelConfig()
+  const { toast } = useToast()
+  const [formError, setFormError] = useState<string | null>(null)
 
   const [form, setForm] = useState<ModelConfigCreate>({
     name: config?.name || '',
@@ -28,7 +31,8 @@ export default function ModelConfigForm({ config, onClose }: Props) {
   const [testError, setTestError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
+    setFormError(null)
     try {
       if (isEdit && config) {
         const update: ModelConfigUpdate = {
@@ -37,19 +41,23 @@ export default function ModelConfigForm({ config, onClose }: Props) {
           provider: form.provider,
           model_id: form.model_id,
           base_url: form.base_url,
-        };
-        if (form.api_key?.trim()) {
-          update.api_key = form.api_key;
         }
-        await updateModelConfig.mutateAsync({ id: config.id, data: update });
+        if (form.api_key?.trim()) {
+          update.api_key = form.api_key
+        }
+        await updateModelConfig.mutateAsync({ id: config.id, data: update })
+        toast('success', 'API 配置已更新')
       } else {
-        await createModelConfig.mutateAsync(form);
+        await createModelConfig.mutateAsync(form)
+        toast('success', 'API 配置已创建')
       }
-      onClose();
-    } catch (error) {
-      console.error('Error saving model config:', error);
+      onClose()
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || '保存失败'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      toast('error', '保存 API 配置失败')
     }
-  };
+  }
 
   const handleTest = async () => {
     if (!config) return;
@@ -181,6 +189,11 @@ export default function ModelConfigForm({ config, onClose }: Props) {
           )}
 
           <div className="flex justify-end gap-4 pt-6 border-t-4 border-black">
+            {formError && (
+              <div className="w-full mb-4 text-xs font-press text-red-300 bg-red-900/50 border-2 border-red-500 p-3 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
+                {formError}
+              </div>
+            )}
             <button type="button" onClick={onClose} className="btn btn-secondary">
               CANCEL
             </button>

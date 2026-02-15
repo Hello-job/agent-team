@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Plus, Search, Users, MoreVertical, Trash2, Edit, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useTeams, useDeleteTeam } from '@/hooks'
+import { useTeams, useDeleteTeam, useDebounce } from '@/hooks'
 import { TeamForm } from '@/components/Team'
 import type { Team, TeamListItem } from '@/types'
 import { teamApi } from '@/services/api'
+import { useToast } from '@/components/Common/Toast'
+import { tauriConfirm } from '@/services/tauri'
 
 const modeLabels: Record<string, string> = {
   roundtable: '圆桌讨论',
@@ -28,9 +30,11 @@ export default function TeamsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTeam, setEditTeam] = useState<Team | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const debouncedSearch = useDebounce(search, 300)
 
-  const { data, isLoading } = useTeams({ search: search || undefined })
+  const { data, isLoading } = useTeams({ search: debouncedSearch || undefined })
   const deleteTeam = useDeleteTeam()
+  const { toast } = useToast()
 
   const handleEdit = async (team: TeamListItem) => {
     const fullTeam = await teamApi.get(team.id)
@@ -40,8 +44,14 @@ export default function TeamsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('确定删除此团队?')) {
-      await deleteTeam.mutateAsync(id)
+    const confirmed = await tauriConfirm('确定删除此团队?', '删除团队')
+    if (confirmed) {
+      try {
+        await deleteTeam.mutateAsync(id)
+        toast('success', '团队已删除')
+      } catch (err: any) {
+        toast('error', err?.message || '删除失败')
+      }
     }
     setMenuOpen(null)
   }
@@ -79,6 +89,12 @@ export default function TeamsPage() {
 
       {isLoading ? (
         <div className="text-center py-12 text-gray-400 uppercase">加载中...</div>
+      ) : data?.items.length === 0 && debouncedSearch ? (
+        <div className="card text-center py-12">
+          <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-press text-white mb-2">没有找到匹配的团队</h3>
+          <p className="text-gray-400 text-sm uppercase tracking-tight">尝试其他关键词，或清空搜索</p>
+        </div>
       ) : data?.items.length === 0 ? (
         <div className="card text-center py-12">
           <Users className="w-16 h-16 text-gray-600 mx-auto mb-6" />

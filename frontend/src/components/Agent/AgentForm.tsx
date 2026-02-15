@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { Agent, AgentCreate } from '@/types'
 import { useCreateAgent, useModelConfigs, useUpdateAgent } from '@/hooks'
+import { useToast } from '@/components/Common/Toast'
 
 interface Props {
   agent?: Agent | null
@@ -13,6 +14,8 @@ export default function AgentForm({ agent, onClose }: Props) {
   const createAgent = useCreateAgent()
   const updateAgent = useUpdateAgent()
   const { data: modelConfigs } = useModelConfigs({ includeSystem: false })
+  const { toast } = useToast()
+  const [formError, setFormError] = useState<string | null>(null)
 
   const [form, setForm] = useState<AgentCreate>({
     name: agent?.name || '',
@@ -30,16 +33,25 @@ export default function AgentForm({ agent, onClose }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const payload: AgentCreate = {
-      ...form,
-      model_id: form.model_id ? form.model_id : undefined,
+    setFormError(null)
+    try {
+      const payload: AgentCreate = {
+        ...form,
+        model_id: form.model_id ? form.model_id : undefined,
+      }
+      if (isEdit && agent) {
+        await updateAgent.mutateAsync({ id: agent.id, data: payload })
+        toast('success', 'Agent 已更新')
+      } else {
+        await createAgent.mutateAsync(payload)
+        toast('success', 'Agent 已创建')
+      }
+      onClose()
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || '保存失败'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      toast('error', '保存 Agent 失败')
     }
-    if (isEdit && agent) {
-      await updateAgent.mutateAsync({ id: agent.id, data: payload })
-    } else {
-      await createAgent.mutateAsync(payload)
-    }
-    onClose()
   }
 
   const addTag = () => {
@@ -196,6 +208,11 @@ export default function AgentForm({ agent, onClose }: Props) {
           </div>
 
           <div className="flex justify-end gap-4 pt-6 border-t-4 border-black">
+            {formError && (
+              <div className="w-full mb-4 text-xs font-press text-red-300 bg-red-900/50 border-2 border-red-500 p-3 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
+                {formError}
+              </div>
+            )}
             <button type="button" onClick={onClose} className="btn btn-secondary">
               CANCEL
             </button>

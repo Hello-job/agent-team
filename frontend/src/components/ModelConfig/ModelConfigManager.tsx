@@ -1,23 +1,28 @@
-import { useState } from 'react';
-import { Plus, Settings, Trash2, Edit3 } from 'lucide-react';
-import type { ModelConfig } from '@/types';
-import { useModelConfigs, useDeleteModelConfig } from '@/hooks';
-import ModelConfigForm from './ModelConfigForm';
-import { setDefaultModelConfig } from '@/services/modelConfigStore';
+import { useState } from 'react'
+import { Plus, Settings, Trash2, Edit3 } from 'lucide-react'
+import type { ModelConfig } from '@/types'
+import { useModelConfigs, useDeleteModelConfig } from '@/hooks'
+import ModelConfigForm from './ModelConfigForm'
+import { setDefaultModelConfig } from '@/services/modelConfigStore'
+import { useToast } from '@/components/Common/Toast'
+import { tauriConfirm } from '@/services/tauri'
 
 export default function ModelConfigManager() {
   const { data: configs, isLoading, refetch } = useModelConfigs({ includeSystem: false });
   const deleteMutation = useDeleteModelConfig();
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ModelConfig | null>(null);
+  const { toast } = useToast()
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('确定要删除此API配置吗？此操作不可撤销。')) {
+    const confirmed = await tauriConfirm('确定要删除此API配置吗？此操作不可撤销。', '删除配置')
+    if (confirmed) {
       try {
         await deleteMutation.mutateAsync(id);
+        toast('success', 'API 配置已删除')
         refetch();
-      } catch (error) {
-        console.error('删除API配置失败:', error);
+      } catch (error: any) {
+        toast('error', error?.message || '删除 API 配置失败')
       }
     }
   };
