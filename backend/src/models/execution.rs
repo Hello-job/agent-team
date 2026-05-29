@@ -40,13 +40,6 @@ pub struct ExecutionCreate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutionControl {
-    pub action: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionMessage {
     pub id: String,
     pub sequence: i32,
