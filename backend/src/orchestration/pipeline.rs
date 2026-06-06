@@ -1,87 +1,83 @@
+//! Pipeline: each agent's output feeds the next, in order. If a stage fails,
+//! the pipeline stops there but keeps every earlier stage's output (no
+//! crash-and-lose-everything). Honors cancellation and budget between stages.
+
+use serde_json::{json, Value};
+
 use crate::agents::instance::AgentInstance;
 use crate::error::AppError;
-use crate::orchestration::state::{Opinion, OrchestrationPhase, OrchestrationState};
-use crate::orchestration::tool_events::emit_tool_traces;
-use crate::tools::definition::ToolDefinition;
-use crate::tools::executor::ToolExecutor;
+use crate::orchestration::driver::{ConversationDriver, TurnCtx};
+use crate::orchestration::state::{OrchestrationPhase, OrchestrationState};
 
-pub async fn run_pipeline(
-    agents: Vec<AgentInstance>,
+pub async fn run_pipeline<F>(
+    driver: &mut ConversationDriver,
+    mut agents: Vec<AgentInstance>,
     state: &mut OrchestrationState,
-    emit: &mut impl FnMut(&str, serde_json::Value, Option<String>) -> Result<(), AppError>,
-    tool_defs: &[ToolDefinition],
-    tool_executor: Option<ToolExecutor>,
-) -> Result<Vec<AgentInstance>, AppError> {
+    emit: &mut F,
+) -> Result<(), AppError>
+where
+    F: FnMut(&str, Value, Option<String>) -> Result<(), AppError>,
+{
     state.phase = OrchestrationPhase::Sequential;
     emit(
         "status",
-        serde_json::json!({ "message": "Pipeline started", "stages": agents.len(), "phase": "pipeline" }),
+        json!({ "message": "Pipeline started", "stages": agents.len(), "phase": "pipeline" }),
         None,
     )?;
 
     let original_topic = state.topic.clone();
     let mut current_input = original_topic.clone();
 
-    let mut out_agents = Vec::new();
-    for (idx, mut agent) in agents.into_iter().enumerate() {
+    for (idx, agent) in agents.iter_mut().enumerate() {
+        if driver.should_stop(state).await.is_some() {
+            break;
+        }
+
         let stage = (idx + 1) as i32;
+        let agent_name = agent.name.clone();
+        let agent_id = agent.id.clone();
         emit(
             "status",
-            serde_json::json!({ "message": format!("Processing Stage {stage}: {}", agent.name), "stage": stage, "phase": "pipeline" }),
-            Some(agent.id.clone()),
+            json!({ "message": format!("Processing Stage {stage}: {agent_name}"), "stage": stage, "phase": "pipeline" }),
+            Some(agent_id.clone()),
         )?;
 
-        let (resp, traces) = agent
-            .generate_opinion_with_tools(
-                &current_input,
-                "",
-                &[],
-                "initial",
-                tool_defs,
-                tool_executor.as_ref(),
-            )
-            .await?;
-        emit_tool_traces(emit, &traces, &agent.id, &agent.name, state.round)?;
-
-        let (input_tokens, output_tokens, tokens_estimated) = resp.token_counts();
-
-        let opinion = Opinion {
-            agent_id: agent.id.clone(),
-            agent_name: agent.name.clone(),
-            content: resp.content.clone(),
-            round: state.round,
-            phase: format!("stage_{stage}"),
-            wants_to_continue: true,
-            responding_to: None,
-            input_tokens,
-            output_tokens,
+        // Scope the context so `current_input`'s borrow ends before we reassign it.
+        let produced = {
+            let phase = format!("stage_{stage}");
+            let ctx = TurnCtx {
+                topic: &current_input,
+                summary: "",
+                recent: &[],
+                phase: &phase,
+            };
+            driver.run_turn(agent, &ctx, state, emit).await?
         };
-        state.add_opinion(opinion);
 
-        emit(
-            "opinion",
-            serde_json::json!({
-                "agent_name": agent.name,
-                "content": resp.content,
-                "round": state.round,
-                "phase": format!("stage_{stage}"),
-                "stage": stage,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "tokens_estimated": tokens_estimated,
-                "metadata": resp.metadata
-            }),
-            Some(agent.id.clone()),
-        )?;
-
-        current_input = format!(
-            "原始任务：{original_topic}\n\n上一阶段（第{stage}阶段）的输出：\n{}\n\n请基于上述内容，从你的专业角度进行处理和完善。",
-            resp.content
-        );
-
-        out_agents.push(agent);
+        match produced {
+            Some(opinion) => {
+                current_input = format!(
+                    "原始任务：{original_topic}\n\n上一阶段（第{stage}阶段）的输出：\n{}\n\n请基于上述内容，从你的专业角度进行处理和完善。",
+                    opinion.content
+                );
+            }
+            None => {
+                // Stage failed (error already emitted by the driver). Stop here,
+                // but everything produced so far stays in state.
+                emit(
+                    "status",
+                    json!({
+                        "message": format!("第 {stage} 阶段（{agent_name}）失败，流水线在此中止，已保留前序产出。"),
+                        "phase": "stage_failed",
+                        "stage": stage
+                    }),
+                    Some(agent_id),
+                )?;
+                break;
+            }
+        }
     }
 
     state.phase = OrchestrationPhase::Completed;
-    Ok(out_agents)
+    Ok(())
 }

@@ -1,34 +1,51 @@
+//! Debate: the last agent judges; the rest split into balanced pro/con teams
+//! that exchange opening statements and `max_rounds` of rebuttals, then the
+//! judge delivers a verdict.
+//!
+//! Within a team, members speak concurrently (same side, same round). Requires
+//! at least 3 agents so both sides and the judge are non-empty.
+
+use serde_json::{json, Value};
+
 use crate::agents::instance::AgentInstance;
 use crate::error::AppError;
-use crate::orchestration::state::{Opinion, OrchestrationPhase, OrchestrationState};
-use crate::orchestration::tool_events::emit_tool_traces;
-use crate::tools::definition::ToolDefinition;
-use crate::tools::executor::ToolExecutor;
+use crate::orchestration::driver::{ConversationDriver, TurnCtx};
+use crate::orchestration::state::{OrchestrationPhase, OrchestrationState};
 
-pub async fn run_debate(
-    agents: Vec<AgentInstance>,
+pub async fn run_debate<F>(
+    driver: &mut ConversationDriver,
+    mut agents: Vec<AgentInstance>,
     state: &mut OrchestrationState,
-    emit: &mut impl FnMut(&str, serde_json::Value, Option<String>) -> Result<(), AppError>,
-    max_rounds: i32,
-    tool_defs: &[ToolDefinition],
-    tool_executor: Option<ToolExecutor>,
-) -> Result<Vec<AgentInstance>, AppError> {
+    emit: &mut F,
+) -> Result<(), AppError>
+where
+    F: FnMut(&str, Value, Option<String>) -> Result<(), AppError>,
+{
     state.phase = OrchestrationPhase::Initializing;
 
-    let mut agents = agents;
-    if agents.is_empty() {
-        return Ok(agents);
+    if agents.len() < 3 {
+        let _ = emit(
+            "status",
+            json!({
+                "message": "辩论模式至少需要 3 个 agent（正方、反方、裁判）",
+                "phase": "validation_error"
+            }),
+            None,
+        );
+        return Err(AppError::Message(
+            "Debate needs at least 3 agents (pro, con, judge)".to_string(),
+        ));
     }
 
-    // Auto-assign: last agent as judge, split remaining into pro/con.
-    let judge = agents.pop().unwrap();
+    // Last agent judges; remaining split evenly. len>=3 guarantees both sides >=1.
+    let mut judge = agents.pop().unwrap();
     let mid = agents.len() / 2;
-    let mut pro = agents[..mid].to_vec();
-    let mut con = agents[mid..].to_vec();
+    let mut con = agents.split_off(mid);
+    let mut pro = agents;
 
     emit(
         "status",
-        serde_json::json!({
+        json!({
             "message": "Debate started",
             "pro_team": pro.iter().map(|a| a.name.clone()).collect::<Vec<_>>(),
             "con_team": con.iter().map(|a| a.name.clone()).collect::<Vec<_>>(),
@@ -37,264 +54,126 @@ pub async fn run_debate(
         None,
     )?;
 
+    let topic = state.topic.clone();
     state.round = 1;
     state.phase = OrchestrationPhase::Sequential;
 
-    // Opening: pro then con
-    let pro_prompt = format!("论题：{}\n\n你是正方，请给出开场陈述。", state.topic);
-    let mut pro_args = Vec::new();
-    for agent in pro.iter_mut() {
-        let (resp, traces) = agent
-            .generate_opinion_with_tools(
-                &pro_prompt,
-                "",
-                &[],
-                "initial",
-                tool_defs,
-                tool_executor.as_ref(),
-            )
+    // Opening statements: pro (concurrent), then con responding to pro (concurrent).
+    let pro_prompt = format!("论题：{topic}\n\n你是正方，请给出开场陈述。");
+    {
+        let ctx = TurnCtx {
+            topic: &pro_prompt,
+            summary: "",
+            recent: &[],
+            phase: "pro_opening",
+        };
+        driver
+            .run_turns_concurrent(&mut pro, &ctx, state, emit)
             .await?;
-        emit_tool_traces(emit, &traces, &agent.id, &agent.name, state.round)?;
-
-        let (input_tokens, output_tokens, tokens_estimated) = resp.token_counts();
-        state.add_opinion(Opinion {
-            agent_id: agent.id.clone(),
-            agent_name: agent.name.clone(),
-            content: resp.content.clone(),
-            round: state.round,
-            phase: "pro_opening".to_string(),
-            wants_to_continue: true,
-            responding_to: None,
-            input_tokens,
-            output_tokens,
-        });
-        pro_args.push(
-            serde_json::json!({"agent_name": agent.name.clone(), "content": resp.content.clone()}),
-        );
-        emit(
-            "opinion",
-            serde_json::json!({
-                "agent_name": agent.name.clone(),
-                "content": resp.content.clone(),
-                "round": state.round,
-                "phase": "pro_opening",
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "tokens_estimated": tokens_estimated,
-                "metadata": resp.metadata
-            }),
-            Some(agent.id.clone()),
-        )?;
     }
 
-    let con_prompt = format!(
-        "论题：{}\n\n你是反方，请回应正方并给出开场陈述。",
-        state.topic
-    );
-    for agent in con.iter_mut() {
-        let (resp, traces) = agent
-            .generate_opinion_with_tools(
-                &con_prompt,
-                "",
-                &pro_args,
-                "response",
-                tool_defs,
-                tool_executor.as_ref(),
-            )
+    let con_prompt = format!("论题：{topic}\n\n你是反方，请回应正方并给出开场陈述。");
+    {
+        let pro_args = opinions_with_phase(state, "pro_opening");
+        let ctx = TurnCtx {
+            topic: &con_prompt,
+            summary: "",
+            recent: &pro_args,
+            phase: "con_opening",
+        };
+        driver
+            .run_turns_concurrent(&mut con, &ctx, state, emit)
             .await?;
-        emit_tool_traces(emit, &traces, &agent.id, &agent.name, state.round)?;
-        let (input_tokens, output_tokens, tokens_estimated) = resp.token_counts();
-        state.add_opinion(Opinion {
-            agent_id: agent.id.clone(),
-            agent_name: agent.name.clone(),
-            content: resp.content.clone(),
-            round: state.round,
-            phase: "con_opening".to_string(),
-            wants_to_continue: true,
-            responding_to: None,
-            input_tokens,
-            output_tokens,
-        });
-        emit(
-            "opinion",
-            serde_json::json!({
-                "agent_name": agent.name.clone(),
-                "content": resp.content.clone(),
-                "round": state.round,
-                "phase": "con_opening",
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "tokens_estimated": tokens_estimated,
-                "metadata": resp.metadata
-            }),
-            Some(agent.id.clone()),
-        )?;
     }
 
-    // Rebuttals
-    for round_num in 1..=max_rounds {
-        state.round += 1;
+    // Rebuttal rounds.
+    let max_rounds = driver.max_rounds();
+    for _ in 0..max_rounds {
+        if driver.should_stop(state).await.is_some() {
+            break;
+        }
+        state.start_new_round();
         emit(
             "status",
-            serde_json::json!({ "message": format!("Rebuttal round {}", round_num), "round": state.round, "phase": "rebuttal" }),
+            json!({ "message": format!("Rebuttal round {}", state.round), "round": state.round, "phase": "rebuttal" }),
             None,
         )?;
-        let last = state
-            .opinions
-            .iter()
-            .rev()
-            .take(pro.len() + con.len())
-            .map(|op| serde_json::json!({"agent_name": op.agent_name.clone(), "content": op.content.clone(), "phase": op.phase.clone()}))
-            .collect::<Vec<_>>();
 
-        for agent in pro.iter_mut() {
-            let (resp, traces) = agent
-                .generate_opinion_with_tools(
-                    &state.topic,
-                    "",
-                    &last,
-                    "response",
-                    tool_defs,
-                    tool_executor.as_ref(),
-                )
+        let team_size = pro.len() + con.len();
+        {
+            let last = recent_team_opinions(state, team_size);
+            let ctx = TurnCtx {
+                topic: &topic,
+                summary: "",
+                recent: &last,
+                phase: "pro_rebuttal",
+            };
+            driver
+                .run_turns_concurrent(&mut pro, &ctx, state, emit)
                 .await?;
-            emit_tool_traces(emit, &traces, &agent.id, &agent.name, state.round)?;
-            let (input_tokens, output_tokens, tokens_estimated) = resp.token_counts();
-            state.add_opinion(Opinion {
-                agent_id: agent.id.clone(),
-                agent_name: agent.name.clone(),
-                content: resp.content.clone(),
-                round: state.round,
-                phase: "pro_rebuttal".to_string(),
-                wants_to_continue: true,
-                responding_to: None,
-                input_tokens,
-                output_tokens,
-            });
-            emit(
-                "opinion",
-                serde_json::json!({
-                    "agent_name": agent.name.clone(),
-                    "content": resp.content.clone(),
-                    "round": state.round,
-                    "phase": "pro_rebuttal",
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "tokens_estimated": tokens_estimated,
-                    "metadata": resp.metadata
-                }),
-                Some(agent.id.clone()),
-            )?;
         }
-
-        for agent in con.iter_mut() {
-            let (resp, traces) = agent
-                .generate_opinion_with_tools(
-                    &state.topic,
-                    "",
-                    &last,
-                    "response",
-                    tool_defs,
-                    tool_executor.as_ref(),
-                )
+        {
+            let last = recent_team_opinions(state, team_size);
+            let ctx = TurnCtx {
+                topic: &topic,
+                summary: "",
+                recent: &last,
+                phase: "con_rebuttal",
+            };
+            driver
+                .run_turns_concurrent(&mut con, &ctx, state, emit)
                 .await?;
-            emit_tool_traces(emit, &traces, &agent.id, &agent.name, state.round)?;
-            let (input_tokens, output_tokens, tokens_estimated) = resp.token_counts();
-            state.add_opinion(Opinion {
-                agent_id: agent.id.clone(),
-                agent_name: agent.name.clone(),
-                content: resp.content.clone(),
-                round: state.round,
-                phase: "con_rebuttal".to_string(),
-                wants_to_continue: true,
-                responding_to: None,
-                input_tokens,
-                output_tokens,
-            });
-            emit(
-                "opinion",
-                serde_json::json!({
-                    "agent_name": agent.name.clone(),
-                    "content": resp.content.clone(),
-                    "round": state.round,
-                    "phase": "con_rebuttal",
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "tokens_estimated": tokens_estimated,
-                    "metadata": resp.metadata
-                }),
-                Some(agent.id.clone()),
-            )?;
         }
     }
 
-    // Judge verdict
+    // Judge verdict.
     state.phase = OrchestrationPhase::Summarizing;
-    let pro_text = state
-        .opinions
-        .iter()
-        .filter(|o| o.phase.starts_with("pro_"))
-        .map(|o| format!("- {}: {}", o.agent_name, o.content))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let con_text = state
-        .opinions
-        .iter()
-        .filter(|o| o.phase.starts_with("con_"))
-        .map(|o| format!("- {}: {}", o.agent_name, o.content))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let pro_text = side_text(state, "pro_");
+    let con_text = side_text(state, "con_");
     let verdict_prompt = format!(
-        "作为裁判，请评判以下辩论：\n\n论题：{}\n\n正方观点：\n{}\n\n反方观点：\n{}\n\n请给出裁决：\n1. 双方论点总结\n2. 优势与不足\n3. 最终判断",
-        state.topic, pro_text, con_text
+        "作为裁判，请评判以下辩论：\n\n论题：{topic}\n\n正方观点：\n{pro_text}\n\n反方观点：\n{con_text}\n\n请给出裁决：\n1. 双方论点总结\n2. 优势与不足\n3. 最终判断",
     );
-
-    let mut judge = judge;
-    let (verdict, traces) = judge
-        .generate_opinion_with_tools(
-            &verdict_prompt,
-            "",
-            &[],
-            "initial",
-            tool_defs,
-            tool_executor.as_ref(),
-        )
-        .await?;
-    emit_tool_traces(emit, &traces, &judge.id, &judge.name, state.round)?;
-
-    state.summary = verdict.content.clone();
-    let (input_tokens, output_tokens, tokens_estimated) = verdict.token_counts();
-    state.add_opinion(Opinion {
-        agent_id: judge.id.clone(),
-        agent_name: judge.name.clone(),
-        content: verdict.content.clone(),
-        round: state.round,
-        phase: "judge_verdict".to_string(),
-        wants_to_continue: false,
-        responding_to: None,
-        input_tokens,
-        output_tokens,
-    });
-    emit(
-        "opinion",
-        serde_json::json!({
-            "agent_name": judge.name.clone(),
-            "content": verdict.content.clone(),
-            "round": state.round,
-            "phase": "judge_verdict",
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "tokens_estimated": tokens_estimated,
-            "metadata": verdict.metadata
-        }),
-        Some(judge.id.clone()),
-    )?;
+    {
+        let ctx = TurnCtx {
+            topic: &verdict_prompt,
+            summary: "",
+            recent: &[],
+            phase: "judge_verdict",
+        };
+        if let Some(opinion) = driver.run_turn(&mut judge, &ctx, state, emit).await? {
+            state.summary = opinion.content;
+        }
+    }
 
     state.phase = OrchestrationPhase::Completed;
+    Ok(())
+}
 
-    let mut all = Vec::new();
-    all.extend(pro);
-    all.extend(con);
-    all.push(judge);
-    Ok(all)
+fn opinions_with_phase(state: &OrchestrationState, phase: &str) -> Vec<Value> {
+    state
+        .opinions
+        .iter()
+        .filter(|o| o.phase == phase)
+        .map(|o| json!({"agent_name": o.agent_name.clone(), "content": o.content.clone()}))
+        .collect()
+}
+
+fn recent_team_opinions(state: &OrchestrationState, take: usize) -> Vec<Value> {
+    state
+        .opinions
+        .iter()
+        .rev()
+        .take(take)
+        .map(|o| json!({"agent_name": o.agent_name.clone(), "content": o.content.clone(), "phase": o.phase.clone()}))
+        .collect()
+}
+
+fn side_text(state: &OrchestrationState, prefix: &str) -> String {
+    state
+        .opinions
+        .iter()
+        .filter(|o| o.phase.starts_with(prefix))
+        .map(|o| format!("- {}: {}", o.agent_name, o.content))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

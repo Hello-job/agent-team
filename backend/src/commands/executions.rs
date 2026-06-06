@@ -12,7 +12,10 @@ use crate::models::execution::{
     ExecutionCreate, ExecutionListItem, ExecutionMessage, ExecutionRecord, ExecutionResponse,
 };
 use crate::models::team::Team;
+use crate::orchestration::control::{self, ControlSnapshot, ControlState};
 use crate::orchestration::debate::run_debate;
+use crate::orchestration::driver::ConversationDriver;
+use crate::orchestration::freeform::run_freeform;
 use crate::orchestration::pipeline::run_pipeline;
 use crate::orchestration::roundtable::run_roundtable;
 use crate::orchestration::state::OrchestrationState;
@@ -167,13 +170,26 @@ pub fn control_execution(
     let params = params.unwrap_or_else(|| serde_json::json!({}));
     let status = execution.status.clone();
 
+    // Signal the live run (if any) so the change takes effect mid-discussion,
+    // not just in the DB record.
+    let handle = control::lookup(&state.controls, &id);
+
     if action == "pause" && status == "running" {
         execution.status = "paused".to_string();
+        if let Some(h) = &handle {
+            h.pause();
+        }
     } else if action == "resume" && status == "paused" {
         execution.status = "running".to_string();
+        if let Some(h) = &handle {
+            h.resume();
+        }
     } else if action == "stop" && (status == "running" || status == "paused") {
-        execution.status = "completed".to_string();
+        execution.status = "stopped".to_string();
         execution.completed_at = Some(Utc::now());
+        if let Some(h) = &handle {
+            h.stop();
+        }
     } else if action == "extend_budget" {
         let add_tokens = params
             .get("tokens")
@@ -182,6 +198,9 @@ pub fn control_execution(
         let add_cost = params.get("cost").and_then(|v| v.as_f64()).unwrap_or(5.0);
         execution.tokens_budget = execution.tokens_budget.saturating_add(add_tokens);
         execution.cost_budget += add_cost;
+        if let Some(h) = &handle {
+            h.extend_budget(add_tokens, add_cost);
+        }
     } else {
         return Err(AppError::Message(
             "Invalid action or execution state".to_string(),
@@ -220,12 +239,14 @@ pub fn start_execution(
     execution_id: String,
 ) -> Result<(), AppError> {
     let store = state.store.clone();
+    let controls = state.controls.clone();
     let window = window.clone();
 
     tauri::async_runtime::spawn(async move {
         if let Err(err) = run_execution(
             window.clone(),
             store.clone(),
+            controls.clone(),
             execution_id.clone(),
             None,
             None,
@@ -263,12 +284,14 @@ pub fn followup_execution(
     target_agent_id: Option<String>,
 ) -> Result<(), AppError> {
     let store = state.store.clone();
+    let controls = state.controls.clone();
     let window = window.clone();
 
     tauri::async_runtime::spawn(async move {
         if let Err(err) = run_execution(
             window.clone(),
             store.clone(),
+            controls.clone(),
             execution_id.clone(),
             Some(input),
             target_agent_id,
@@ -300,6 +323,7 @@ pub fn followup_execution(
 async fn run_execution(
     window: Window,
     store: std::sync::Arc<crate::store::sqlite::SqliteStore>,
+    controls: control::ControlRegistry,
     execution_id: String,
     followup_input: Option<String>,
     target_agent_id: Option<String>,
@@ -351,6 +375,7 @@ async fn run_execution(
         run_round(
             window,
             store,
+            controls,
             execution,
             input.clone(),
             target_agent_id,
@@ -394,13 +419,23 @@ async fn run_execution(
         &mut event_seq,
     );
 
-    run_round(window, store, execution, initial, None, &mut event_seq).await?;
+    run_round(
+        window,
+        store,
+        controls,
+        execution,
+        initial,
+        None,
+        &mut event_seq,
+    )
+    .await?;
     Ok(())
 }
 
 async fn run_round(
     window: Window,
     store: std::sync::Arc<crate::store::sqlite::SqliteStore>,
+    controls: control::ControlRegistry,
     mut execution: ExecutionRecord,
     topic: String,
     target_agent_id: Option<String>,
@@ -656,48 +691,62 @@ async fn run_round(
         }
     }
 
-    // Choose orchestrator
-    match team.collaboration_mode.as_str() {
-        "pipeline" => {
-            state.phase = crate::orchestration::state::OrchestrationPhase::Sequential;
-            let _ = run_pipeline(
-                agents,
-                &mut state,
-                &mut emit,
-                tool_defs.as_slice(),
-                tool_executor.clone(),
-            )
-            .await?;
-        }
-        "debate" => {
-            let _ = run_debate(
-                agents,
-                &mut state,
-                &mut emit,
-                3,
-                tool_defs.as_slice(),
-                tool_executor.clone(),
-            )
-            .await?;
-        }
-        _ => {
-            let _ = run_roundtable(
-                agents,
-                &mut state,
-                &mut emit,
-                true,
-                tool_defs.as_slice(),
-                tool_executor.clone(),
-            )
-            .await?;
-        }
-    }
+    // Resolve the round bound: coordination rule if set, else a per-mode default.
+    let mode = team.collaboration_mode.clone();
+    let configured_rounds = team.coordination_rules.max_rounds;
+    let default_rounds = match mode.as_str() {
+        "debate" | "freeform" => 3,
+        _ => 2,
+    };
+    let max_rounds = if configured_rounds > 0 {
+        configured_rounds
+    } else {
+        default_rounds
+    };
 
-    // Save execution state
-    execution.status = "completed".to_string();
+    // Register a live control handle so pause / stop / extend_budget reach this run.
+    let snapshot = ControlSnapshot::new(execution.tokens_budget, execution.cost_budget);
+    let control_rx = control::register(&controls, &execution_id, snapshot);
+    let status_rx = control_rx.clone();
+
+    let mut driver =
+        ConversationDriver::new(Some(control_rx), tool_defs, tool_executor, max_rounds);
+
+    // Dispatch by mode. Unknown modes fail loudly rather than silently falling
+    // back to roundtable.
+    let run_result: Result<(), AppError> = match mode.as_str() {
+        "pipeline" => run_pipeline(&mut driver, agents, &mut state, &mut emit).await,
+        "debate" => run_debate(&mut driver, agents, &mut state, &mut emit).await,
+        "roundtable" => {
+            let summary_agent = team.output_rules.summary_agent_id.clone();
+            run_roundtable(&mut driver, agents, &mut state, &mut emit, summary_agent).await
+        }
+        "freeform" => run_freeform(&mut driver, agents, &mut state, &mut emit).await,
+        other => {
+            let _ = emit(
+                "status",
+                serde_json::json!({
+                    "message": format!("未知协作模式: {other}"),
+                    "phase": "config_error"
+                }),
+                None,
+            );
+            Err(AppError::Message(format!(
+                "Unknown collaboration mode: {other}"
+            )))
+        }
+    };
+
+    control::deregister(&controls, &execution_id);
+    run_result?;
+
+    // Finalize: a user stop leaves the run "stopped"; otherwise "completed".
+    let stopped = status_rx.borrow().state == ControlState::Stopped;
+    execution.status = if stopped { "stopped" } else { "completed" }.to_string();
     execution.completed_at = Some(Utc::now());
     execution.current_round = state.round;
     execution.tokens_used = state.tokens_used;
+    execution.cost = state.cost;
     execution.shared_state = serde_json::to_value(&state).unwrap_or_else(|_| serde_json::json!({}));
     execution.updated_at = Utc::now();
     store.executions_upsert(&execution)?;
@@ -706,7 +755,7 @@ async fn run_round(
         &window,
         &execution_id,
         "status",
-        serde_json::json!({"status": "completed"}),
+        serde_json::json!({"status": execution.status}),
         None,
         event_seq,
     );
@@ -741,7 +790,10 @@ async fn build_agent_instances(
 
         let cfg = resolve_runtime_config_for_agent(agent.model_id.as_deref(), llm)?;
         let provider = provider_from_runtime_config(&cfg)?;
-        instances.push(AgentInstance::from_agent(&agent, provider));
+        instances.push(
+            AgentInstance::from_agent(&agent, provider)
+                .with_pricing(cfg.input_price_per_1k, cfg.output_price_per_1k),
+        );
     }
 
     if instances.is_empty() {

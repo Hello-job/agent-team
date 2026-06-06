@@ -13,6 +13,9 @@ pub struct AgentInstance {
     pub temperature: f64,
     pub max_tokens: u32,
     pub max_tool_iterations: u32,
+    /// Price per 1k input/output tokens, used by the driver to accrue real cost.
+    pub input_price_per_1k: f64,
+    pub output_price_per_1k: f64,
     llm: std::sync::Arc<dyn LLMProvider>,
     opinions: Vec<String>,
 }
@@ -62,6 +65,34 @@ impl AgentInstance {
             temperature: agent.temperature,
             max_tokens: agent.max_tokens,
             max_tool_iterations: agent.max_tool_iterations.unwrap_or(10).clamp(1, 50),
+            input_price_per_1k: 0.0,
+            output_price_per_1k: 0.0,
+            llm,
+            opinions: Vec::new(),
+        }
+    }
+
+    /// Attach per-1k-token pricing (from the resolved runtime config) so the
+    /// driver can compute real cost per turn.
+    pub fn with_pricing(mut self, input_price_per_1k: f64, output_price_per_1k: f64) -> Self {
+        self.input_price_per_1k = input_price_per_1k;
+        self.output_price_per_1k = output_price_per_1k;
+        self
+    }
+
+    /// Minimal constructor for orchestration tests: wires a (mock) provider
+    /// without needing a full `Agent` record.
+    #[cfg(test)]
+    pub fn new_for_test(id: &str, name: &str, llm: std::sync::Arc<dyn LLMProvider>) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            system_prompt: String::new(),
+            temperature: 0.0,
+            max_tokens: 256,
+            max_tool_iterations: 1,
+            input_price_per_1k: 0.0,
+            output_price_per_1k: 0.0,
             llm,
             opinions: Vec::new(),
         }
@@ -101,6 +132,36 @@ impl AgentInstance {
         }
 
         parts.join("\n\n")
+    }
+
+    /// One-off raw completion, no opinion scaffolding. Used by the freeform
+    /// moderator to decide who speaks next.
+    pub async fn raw_complete(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> Result<String, crate::error::AppError> {
+        let messages = vec![
+            Message {
+                role: MessageRole::System,
+                content: Some(system.to_string()),
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            },
+            Message {
+                role: MessageRole::User,
+                content: Some(user.to_string()),
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            },
+        ];
+        let resp = self
+            .llm
+            .chat(messages, self.temperature, self.max_tokens)
+            .await?;
+        Ok(resp.content)
     }
 
     fn system_message(&self) -> Message {
@@ -271,8 +332,10 @@ impl AgentInstance {
 }
 
 fn should_continue(content: &str) -> bool {
-    // 检测 [DONE] 标记
-    !content.contains("[DONE]")
+    // 共识信号：[DONE] 必须独立成行或位于结尾，避免正文里偶然提到就误判终止。
+    let done = content.lines().any(|line| line.trim() == "[DONE]")
+        || content.trim_end().ends_with("[DONE]");
+    !done
 }
 
 fn default_true() -> bool {
@@ -324,5 +387,8 @@ mod tests {
     fn should_continue_flips_on_done_marker() {
         assert!(should_continue("still thinking"));
         assert!(!should_continue("final answer\n[DONE]"));
+        assert!(!should_continue("all settled [DONE]"));
+        // A passing mention mid-sentence must NOT terminate the discussion.
+        assert!(should_continue("I'm not [DONE] yet, more to discuss"));
     }
 }
