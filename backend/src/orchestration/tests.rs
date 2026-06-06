@@ -16,7 +16,7 @@ use crate::error::AppError;
 use crate::llm::provider::{LLMProvider, LLMResponse, Message, TokenUsage};
 use crate::orchestration::control::{ControlHandle, ControlSnapshot};
 use crate::orchestration::debate::run_debate;
-use crate::orchestration::driver::{ConversationDriver, TurnCtx};
+use crate::orchestration::driver::{ConversationDriver, DeltaSink, TurnCtx};
 use crate::orchestration::freeform::run_freeform;
 use crate::orchestration::pipeline::run_pipeline;
 use crate::orchestration::roundtable::run_roundtable;
@@ -159,6 +159,43 @@ impl LLMProvider for MockProvider {
             finish_reason: None,
             tool_calls: Vec::new(),
         })
+    }
+}
+
+// ---- Test delta sink -----------------------------------------------------
+
+#[derive(Default)]
+struct CapturedDeltas {
+    starts: Vec<(String, String)>, // (message_id, agent_id)
+    deltas: Vec<(String, String)>, // (message_id, text)
+}
+
+struct TestSink {
+    inner: Arc<Mutex<CapturedDeltas>>,
+}
+
+impl DeltaSink for TestSink {
+    fn opinion_start(
+        &self,
+        message_id: &str,
+        agent_id: &str,
+        _agent_name: &str,
+        _round: i32,
+        _phase: &str,
+    ) {
+        self.inner
+            .lock()
+            .unwrap()
+            .starts
+            .push((message_id.to_string(), agent_id.to_string()));
+    }
+
+    fn opinion_delta(&self, message_id: &str, _agent_id: &str, delta: &str) {
+        self.inner
+            .lock()
+            .unwrap()
+            .deltas
+            .push((message_id.to_string(), delta.to_string()));
     }
 }
 
@@ -427,4 +464,45 @@ async fn freeform_router_picks_speaker_then_ends() {
     // Exactly one speaking turn happened (a1), then the moderator ended it.
     assert_eq!(state.opinions.len(), 1);
     assert_eq!(state.opinions[0].agent_id, "a1");
+}
+
+// ---- Streaming -----------------------------------------------------------
+
+#[tokio::test]
+async fn run_turn_streams_opinion_start_and_deltas_to_the_sink() {
+    let captured = Arc::new(Mutex::new(CapturedDeltas::default()));
+    let sink = Arc::new(TestSink {
+        inner: captured.clone(),
+    });
+    let mut a = agent("a", MockProvider::always("hello world", 1, 2));
+    let (defs, exec) = no_tools();
+    let driver = ConversationDriver::new(None, defs, exec, 1).with_sink(sink);
+    let mut state = fresh_state("t");
+    let buf = collector();
+    let mut emit = emit_into(buf);
+    let ctx = TurnCtx {
+        topic: "t",
+        summary: "",
+        recent: &[],
+        phase: "initial",
+    };
+
+    driver
+        .run_turn(&mut a, &ctx, &mut state, &mut emit)
+        .await
+        .unwrap();
+
+    let cap = captured.lock().unwrap();
+    // One opinion_start, and the streamed deltas reassemble to the full content.
+    assert_eq!(cap.starts.len(), 1);
+    let streamed: String = cap.deltas.iter().map(|(_, t)| t.clone()).collect();
+    assert_eq!(streamed, "hello world");
+    // start + every delta share the one message id.
+    let message_id = &cap.starts[0].0;
+    assert!(cap.deltas.iter().all(|(m, _)| m == message_id));
+    drop(cap);
+
+    // And the turn is still recorded as a finished opinion.
+    assert_eq!(state.opinions.len(), 1);
+    assert_eq!(state.opinions[0].content, "hello world");
 }

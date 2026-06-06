@@ -195,7 +195,35 @@ impl AgentInstance {
         Ok(resp)
     }
 
+    /// Non-streaming turn: assembles the opinion (running any tool iterations)
+    /// and returns it whole. Implemented on top of the streaming path with a
+    /// no-op delta sink.
     pub async fn generate_opinion_with_tools(
+        &mut self,
+        topic: &str,
+        discussion_summary: &str,
+        recent_opinions: &[serde_json::Value],
+        phase: &str,
+        tools: &[ToolDefinition],
+        executor: Option<&ToolExecutor>,
+    ) -> Result<(AgentResponse, Vec<ToolTrace>), crate::error::AppError> {
+        self.generate_opinion_streaming(
+            topic,
+            discussion_summary,
+            recent_opinions,
+            phase,
+            tools,
+            executor,
+            &mut |_| {},
+        )
+        .await
+    }
+
+    /// Like [`generate_opinion_with_tools`](Self::generate_opinion_with_tools)
+    /// but streams text fragments to `on_delta` as they arrive. Tool-use
+    /// iterations are still driven internally; only assistant text streams.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn generate_opinion_streaming(
         &mut self,
         topic: &str,
         discussion_summary: &str,
@@ -203,6 +231,7 @@ impl AgentInstance {
         _phase: &str,
         tools: &[ToolDefinition],
         executor: Option<&ToolExecutor>,
+        on_delta: &mut (dyn for<'a> FnMut(&'a str) + Send),
     ) -> Result<(AgentResponse, Vec<ToolTrace>), crate::error::AppError> {
         let mut messages = vec![self.system_message()];
 
@@ -252,15 +281,17 @@ impl AgentInstance {
         let mut final_text = String::new();
         let mut last_text = String::new();
         for _ in 0..max_iters {
-            let resp = if tools_enabled {
-                self.llm
-                    .chat_with_tools(messages.clone(), tools, self.temperature, self.max_tokens)
-                    .await?
-            } else {
-                self.llm
-                    .chat(messages.clone(), self.temperature, self.max_tokens)
-                    .await?
-            };
+            let turn_tools: &[ToolDefinition] = if tools_enabled { tools } else { &[] };
+            let resp = self
+                .llm
+                .chat_stream(
+                    messages.clone(),
+                    turn_tools,
+                    self.temperature,
+                    self.max_tokens,
+                    on_delta,
+                )
+                .await?;
 
             total_input_tokens = total_input_tokens.saturating_add(resp.usage.input_tokens);
             total_output_tokens = total_output_tokens.saturating_add(resp.usage.output_tokens);

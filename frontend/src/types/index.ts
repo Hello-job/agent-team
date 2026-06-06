@@ -217,6 +217,8 @@ export interface ExecutionMessage {
   tokens_estimated: boolean
   metadata: Record<string, unknown>
   created_at: string
+  /** True while this bubble is still being streamed token-by-token. */
+  streaming?: boolean
 }
 
 export interface ExecutionCreate {

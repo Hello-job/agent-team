@@ -70,6 +70,33 @@ pub trait LLMProvider: Send + Sync {
         let _ = tools;
         self.chat(messages, temperature, max_tokens).await
     }
+
+    /// Streaming variant: text fragments are pushed to `on_delta` as they
+    /// arrive, and the fully-assembled [`LLMResponse`] (content + tool calls +
+    /// usage) is returned at the end. Providers that don't implement real
+    /// streaming fall back to a single non-streaming call that emits the whole
+    /// content as one delta, so callers can always use this path uniformly.
+    async fn chat_stream(
+        &self,
+        messages: Vec<Message>,
+        tools: &[ToolDefinition],
+        temperature: f64,
+        max_tokens: u32,
+        on_delta: &mut (dyn for<'a> FnMut(&'a str) + Send),
+    ) -> Result<LLMResponse, AppError> {
+        let resp = if tools.is_empty() {
+            self.chat(messages, temperature, max_tokens).await?
+        } else {
+            self.chat_with_tools(messages, tools, temperature, max_tokens)
+                .await?
+        };
+        // Clone to a local so the borrow for `on_delta` doesn't span the move of `resp`.
+        let content = resp.content.clone();
+        if !content.is_empty() {
+            on_delta(&content);
+        }
+        Ok(resp)
+    }
 }
 
 pub fn estimate_tokens(text: &str) -> u32 {

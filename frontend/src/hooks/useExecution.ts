@@ -163,6 +163,47 @@ export function useExecutionSocket(executionId: string | null) {
       return
     }
 
+    // A streaming turn is opening — create an empty bubble to fill token-by-token.
+    if (data.event_type === 'opinion_start') {
+      const messageId = (data.data.message_id as string) || `${executionId}-${data.sequence}`
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === messageId)) return prev
+        const placeholder: ExecutionMessage = {
+          id: messageId,
+          // Large sequence keeps the live bubble last until the final opinion
+          // arrives with its authoritative sequence.
+          sequence: 1_000_000_000 + data.sequence,
+          round: (data.data.round as number) || 0,
+          phase: (data.data.phase as string) || 'opinion',
+          sender_type: data.agent_id ? 'agent' : 'system',
+          sender_id: data.agent_id,
+          sender_name: (data.data.agent_name as string) || undefined,
+          content: '',
+          content_type: 'text',
+          wants_to_continue: true,
+          input_tokens: 0,
+          output_tokens: 0,
+          tokens_estimated: false,
+          metadata: {},
+          created_at: new Date().toISOString(),
+          streaming: true,
+        }
+        return [...prev, placeholder]
+      })
+      return
+    }
+
+    // Append a streamed fragment to its bubble.
+    if (data.event_type === 'opinion_delta') {
+      const messageId = data.data.message_id as string
+      const delta = (data.data.delta as string) || ''
+      if (!messageId || !delta) return
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, content: m.content + delta } : m))
+      )
+      return
+    }
+
     if (
       data.event_type === 'opinion' ||
       data.event_type === 'summary' ||
@@ -214,7 +255,15 @@ export function useExecutionSocket(executionId: string | null) {
         metadata,
         created_at: new Date().toISOString(),
       }
-      setMessages((prev) => [...prev, msg])
+      // Finalize: replace the streaming placeholder (same id) with the
+      // authoritative message, or append if there was no streamed bubble.
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === msg.id)
+        if (idx === -1) return [...prev, msg]
+        const next = prev.slice()
+        next[idx] = { ...msg, streaming: false }
+        return next
+      })
     }
 
     if (data.event_type === 'done' || data.event_type === 'completed') {

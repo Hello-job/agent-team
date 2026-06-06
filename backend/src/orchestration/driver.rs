@@ -15,9 +15,12 @@
 //! status and skipped; the discussion continues. Modes decide what to do if a
 //! whole round produced nothing.
 
+use std::sync::Arc;
+
 use futures::future::join_all;
 use serde_json::{json, Value};
 use tokio::sync::watch;
+use uuid::Uuid;
 
 use crate::agents::instance::AgentInstance;
 use crate::error::AppError;
@@ -26,6 +29,25 @@ use crate::orchestration::state::{Opinion, OrchestrationState};
 use crate::orchestration::tool_events::emit_tool_traces;
 use crate::tools::definition::ToolDefinition;
 use crate::tools::executor::ToolExecutor;
+
+/// Sink for live token streaming. The orchestration layer stays Tauri-free;
+/// `executions.rs` provides an implementation that emits to the frontend window.
+/// Implementations must be `Send + Sync` so concurrent turns can each hold a
+/// clone and emit deltas in parallel.
+pub trait DeltaSink: Send + Sync {
+    /// A new streaming message is starting; the frontend should open an empty
+    /// bubble keyed by `message_id`.
+    fn opinion_start(
+        &self,
+        message_id: &str,
+        agent_id: &str,
+        agent_name: &str,
+        round: i32,
+        phase: &str,
+    );
+    /// A text fragment to append to the bubble for `message_id`.
+    fn opinion_delta(&self, message_id: &str, agent_id: &str, delta: &str);
+}
 
 /// Why a mode loop should terminate early.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +72,7 @@ pub struct ConversationDriver {
     tool_defs: Vec<ToolDefinition>,
     tool_executor: Option<ToolExecutor>,
     max_rounds: i32,
+    sink: Option<Arc<dyn DeltaSink>>,
 }
 
 impl ConversationDriver {
@@ -64,7 +87,15 @@ impl ConversationDriver {
             tool_defs,
             tool_executor,
             max_rounds,
+            sink: None,
         }
+    }
+
+    /// Attach a live token-streaming sink. When set, each turn emits an
+    /// `opinion_start` then `opinion_delta` events as text arrives.
+    pub fn with_sink(mut self, sink: Arc<dyn DeltaSink>) -> Self {
+        self.sink = Some(sink);
+        self
     }
 
     /// Resolved round bound, with a floor of 1 (a mode always runs at least one
@@ -129,18 +160,36 @@ impl ConversationDriver {
         let name = agent.name.clone();
         let in_price = agent.input_price_per_1k;
         let out_price = agent.output_price_per_1k;
-        let result = agent
-            .generate_opinion_with_tools(
-                ctx.topic,
-                ctx.summary,
-                ctx.recent,
-                ctx.phase,
-                &self.tool_defs,
-                self.tool_executor.as_ref(),
-            )
-            .await;
+        let message_id = Uuid::new_v4().to_string();
+
+        if let Some(sink) = &self.sink {
+            sink.opinion_start(&message_id, &id, &name, state.round, ctx.phase);
+        }
+
+        let result = {
+            let sink = self.sink.clone();
+            let mid = message_id.clone();
+            let aid = id.clone();
+            let mut on_delta = move |frag: &str| {
+                if let Some(s) = &sink {
+                    s.opinion_delta(&mid, &aid, frag);
+                }
+            };
+            agent
+                .generate_opinion_streaming(
+                    ctx.topic,
+                    ctx.summary,
+                    ctx.recent,
+                    ctx.phase,
+                    &self.tool_defs,
+                    self.tool_executor.as_ref(),
+                    &mut on_delta,
+                )
+                .await
+        };
+
         self.record_turn(
-            id, name, in_price, out_price, result, ctx.phase, state, emit,
+            message_id, id, name, in_price, out_price, result, ctx.phase, state, emit,
         )
     }
 
@@ -160,34 +209,52 @@ impl ConversationDriver {
         let tool_defs: &[ToolDefinition] = &self.tool_defs;
         let tool_executor = self.tool_executor.as_ref();
         let (topic, summary, recent, phase) = (ctx.topic, ctx.summary, ctx.recent, ctx.phase);
+        let sink = self.sink.clone();
+        let round = state.round;
 
         let futures = agents.iter_mut().map(move |agent| {
             let id = agent.id.clone();
             let name = agent.name.clone();
             let in_price = agent.input_price_per_1k;
             let out_price = agent.output_price_per_1k;
+            let message_id = Uuid::new_v4().to_string();
+            let sink = sink.clone();
             async move {
+                if let Some(s) = &sink {
+                    s.opinion_start(&message_id, &id, &name, round, phase);
+                }
+                let mut on_delta = {
+                    let sink = sink.clone();
+                    let mid = message_id.clone();
+                    let aid = id.clone();
+                    move |frag: &str| {
+                        if let Some(s) = &sink {
+                            s.opinion_delta(&mid, &aid, frag);
+                        }
+                    }
+                };
                 let result = agent
-                    .generate_opinion_with_tools(
+                    .generate_opinion_streaming(
                         topic,
                         summary,
                         recent,
                         phase,
                         tool_defs,
                         tool_executor,
+                        &mut on_delta,
                     )
                     .await;
-                (id, name, in_price, out_price, result)
+                (message_id, id, name, in_price, out_price, result)
             }
         });
 
         let results = join_all(futures).await;
 
         let mut opinions = Vec::new();
-        for (id, name, in_price, out_price, result) in results {
-            if let Some(op) =
-                self.record_turn(id, name, in_price, out_price, result, phase, state, emit)?
-            {
+        for (message_id, id, name, in_price, out_price, result) in results {
+            if let Some(op) = self.record_turn(
+                message_id, id, name, in_price, out_price, result, phase, state, emit,
+            )? {
                 opinions.push(op);
             }
         }
@@ -200,6 +267,7 @@ impl ConversationDriver {
     #[allow(clippy::too_many_arguments)]
     fn record_turn<F>(
         &self,
+        message_id: String,
         agent_id: String,
         agent_name: String,
         in_price: f64,
@@ -241,6 +309,7 @@ impl ConversationDriver {
                 emit(
                     "opinion",
                     json!({
+                        "message_id": message_id,
                         "agent_name": agent_name,
                         "content": resp.content,
                         "wants_to_continue": resp.wants_to_continue,

@@ -34,6 +34,60 @@ struct ExecutionEventPayload {
     sequence: u64,
 }
 
+/// Live token-streaming sink: emits `opinion_start` / `opinion_delta` events
+/// straight to the frontend window. Uses an independent sequence counter —
+/// these ephemeral deltas are routed by `message_id` on the client and never
+/// enter the persisted, sequence-ordered message list.
+struct WindowDeltaSink {
+    window: Window,
+    execution_id: String,
+    seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl WindowDeltaSink {
+    fn send(&self, event_type: &str, data: Value, agent_id: Option<String>) {
+        let sequence = self.seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let payload = ExecutionEventPayload {
+            execution_id: self.execution_id.clone(),
+            event_type: event_type.to_string(),
+            data,
+            agent_id,
+            sequence,
+        };
+        let _ = self.window.emit(EVENT_NAME, payload);
+    }
+}
+
+impl crate::orchestration::driver::DeltaSink for WindowDeltaSink {
+    fn opinion_start(
+        &self,
+        message_id: &str,
+        agent_id: &str,
+        agent_name: &str,
+        round: i32,
+        phase: &str,
+    ) {
+        self.send(
+            "opinion_start",
+            serde_json::json!({
+                "message_id": message_id,
+                "agent_name": agent_name,
+                "round": round,
+                "phase": phase
+            }),
+            Some(agent_id.to_string()),
+        );
+    }
+
+    fn opinion_delta(&self, message_id: &str, agent_id: &str, delta: &str) {
+        self.send(
+            "opinion_delta",
+            serde_json::json!({ "message_id": message_id, "delta": delta }),
+            Some(agent_id.to_string()),
+        );
+    }
+}
+
 #[tauri::command]
 pub fn list_executions(
     state: State<AppState>,
@@ -561,8 +615,15 @@ async fn run_round(
                             .and_then(|v| v.as_bool())
                     })
                     .unwrap_or(false);
+                // Honor a message_id supplied by the driver (so a streamed
+                // bubble and its final persisted message share one id).
+                let message_id = data
+                    .get("message_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| Uuid::new_v4().to_string());
                 let message = ExecutionMessage {
-                    id: Uuid::new_v4().to_string(),
+                    id: message_id,
                     sequence: msg_seq,
                     round,
                     phase: phase.clone(),
@@ -709,8 +770,16 @@ async fn run_round(
     let control_rx = control::register(&controls, &execution_id, snapshot);
     let status_rx = control_rx.clone();
 
+    // Live streaming sink → frontend gets opinion_start + token deltas.
+    let sink = std::sync::Arc::new(WindowDeltaSink {
+        window: window.clone(),
+        execution_id: execution_id.clone(),
+        seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    });
+
     let mut driver =
-        ConversationDriver::new(Some(control_rx), tool_defs, tool_executor, max_rounds);
+        ConversationDriver::new(Some(control_rx), tool_defs, tool_executor, max_rounds)
+            .with_sink(sink);
 
     // Dispatch by mode. Unknown modes fail loudly rather than silently falling
     // back to roundtable.

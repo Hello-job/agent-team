@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::llm::provider::{estimate_tokens, LLMProvider, LLMResponse, Message, TokenUsage};
 use crate::tools::definition::{ToolCall, ToolDefinition};
 use async_trait::async_trait;
+use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use serde::Deserialize;
 
@@ -221,6 +222,161 @@ impl LLMProvider for OpenAICompatibleProvider {
             tool_calls,
         })
     }
+
+    async fn chat_stream(
+        &self,
+        messages: Vec<Message>,
+        tools: &[ToolDefinition],
+        temperature: f64,
+        max_tokens: u32,
+        on_delta: &mut (dyn for<'a> FnMut(&'a str) + Send),
+    ) -> Result<LLMResponse, AppError> {
+        let openai_messages = messages
+            .into_iter()
+            .map(to_openai_message)
+            .collect::<Result<Vec<_>, AppError>>()?;
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": openai_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": true,
+            "stream_options": { "include_usage": true }
+        });
+        if !tools.is_empty() {
+            let tool_defs = tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            body["tools"] = serde_json::Value::Array(tool_defs);
+            body["tool_choice"] = serde_json::Value::String("auto".to_string());
+        }
+
+        let resp = self
+            .client
+            .post(self.endpoint())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::Message(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::Message(format!(
+                "OpenAI-compatible error: {status} {text}"
+            )));
+        }
+
+        let mut stream = resp.bytes_stream();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut content = String::new();
+        // (id, name, accumulated-arguments) per tool-call index.
+        let mut acc_tools: Vec<(String, String, String)> = Vec::new();
+        let mut finish_reason: Option<String> = None;
+        let mut usage: Option<ChatUsage> = None;
+        let mut model: Option<String> = None;
+
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk.map_err(|e| AppError::Message(e.to_string()))?;
+            buf.extend_from_slice(&bytes);
+
+            // Split on newlines; decode only complete lines (\n is a safe UTF-8 boundary).
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line = String::from_utf8_lossy(&buf[..pos]).trim().to_string();
+                buf.drain(..=pos);
+
+                let Some(data) = line.strip_prefix("data:") else {
+                    continue;
+                };
+                let data = data.trim();
+                if data.is_empty() || data == "[DONE]" {
+                    continue;
+                }
+                let Ok(parsed) = serde_json::from_str::<StreamChunk>(data) else {
+                    continue;
+                };
+                if parsed.usage.is_some() {
+                    usage = parsed.usage;
+                }
+                if let Some(m) = parsed.model {
+                    model = Some(m);
+                }
+                for choice in parsed.choices {
+                    if let Some(fr) = choice.finish_reason {
+                        finish_reason = Some(fr);
+                    }
+                    if let Some(text) = choice.delta.content {
+                        if !text.is_empty() {
+                            content.push_str(&text);
+                            on_delta(&text);
+                        }
+                    }
+                    for tc in choice.delta.tool_calls.unwrap_or_default() {
+                        while acc_tools.len() <= tc.index {
+                            acc_tools.push((String::new(), String::new(), String::new()));
+                        }
+                        let entry = &mut acc_tools[tc.index];
+                        if let Some(id) = tc.id {
+                            if !id.is_empty() {
+                                entry.0 = id;
+                            }
+                        }
+                        if let Some(f) = tc.function {
+                            if let Some(name) = f.name {
+                                if !name.is_empty() {
+                                    entry.1 = name;
+                                }
+                            }
+                            if let Some(args) = f.arguments {
+                                entry.2.push_str(&args);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let tool_calls: Vec<ToolCall> = acc_tools
+            .into_iter()
+            .filter(|(id, name, _)| !id.is_empty() || !name.is_empty())
+            .map(|(id, name, args)| {
+                let arguments =
+                    serde_json::from_str(&args).unwrap_or(serde_json::Value::String(args));
+                ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }
+            })
+            .collect();
+
+        let prompt_tokens = usage.as_ref().and_then(|u| u.prompt_tokens);
+        let completion_tokens = usage.as_ref().and_then(|u| u.completion_tokens);
+        let estimated = prompt_tokens.is_none() || completion_tokens.is_none();
+
+        Ok(LLMResponse {
+            content: content.clone(),
+            usage: TokenUsage {
+                input_tokens: prompt_tokens.unwrap_or_else(|| estimate_tokens(&body.to_string())),
+                output_tokens: completion_tokens.unwrap_or_else(|| estimate_tokens(&content)),
+                estimated,
+            },
+            model: model.unwrap_or_else(|| self.model.clone()),
+            finish_reason,
+            tool_calls,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -261,6 +417,52 @@ struct OpenAIToolCall {
 struct OpenAIFunctionCall {
     pub name: String,
     pub arguments: String,
+}
+
+// ---- Streaming (SSE) chunk shapes ----
+
+#[derive(Debug, Deserialize)]
+struct StreamChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+    #[serde(default)]
+    usage: Option<ChatUsage>,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    #[serde(default)]
+    delta: StreamDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct StreamDelta {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<StreamToolCallDelta>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamToolCallDelta {
+    #[serde(default)]
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<StreamFunctionDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamFunctionDelta {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 fn to_openai_message(msg: Message) -> Result<serde_json::Value, AppError> {

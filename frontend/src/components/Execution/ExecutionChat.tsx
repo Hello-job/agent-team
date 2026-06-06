@@ -132,7 +132,12 @@ function MessageBubble({ message }: { message: ExecutionMessage }) {
               </div>
             </details>
           ) : (
-            <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+            <p className="whitespace-pre-wrap leading-relaxed">
+              {message.content}
+              {message.streaming && (
+                <span className="inline-block w-2 h-4 ml-0.5 bg-primary-400 animate-pulse align-middle" />
+              )}
+            </p>
           )}
         </div>
         <div className="text-[10px] font-press text-gray-500 mt-3 uppercase tracking-tighter">
