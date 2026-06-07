@@ -166,6 +166,32 @@ pub fn normalize_anthropic_base_url(base_url: Option<String>) -> String {
     }
 }
 
+/// Whether this model accepts a `temperature` parameter. Claude Opus 4.7 and
+/// later removed sampling parameters (`temperature`/`top_p`/`top_k`) — sending
+/// `temperature` to them returns HTTP 400. Every other Anthropic model still
+/// accepts it, so we send it for them and omit it for Opus 4.7+.
+fn anthropic_supports_temperature(model_id: &str) -> bool {
+    !opus_minor_version_at_least(model_id, 7)
+}
+
+/// True when `model_id` names a Claude Opus 4.x at minor version `>= min_minor`
+/// (e.g. `claude-opus-4-8`, `anthropic.claude-opus-4-9`). Forward-compatible:
+/// a future `opus-4-10` parses as minor 10.
+fn opus_minor_version_at_least(model_id: &str, min_minor: u32) -> bool {
+    const MARKER: &str = "opus-4-";
+    let Some(idx) = model_id.find(MARKER) else {
+        return false;
+    };
+    let minor: String = model_id[idx + MARKER.len()..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    minor
+        .parse::<u32>()
+        .map(|n| n >= min_minor)
+        .unwrap_or(false)
+}
+
 #[async_trait]
 impl LLMProvider for AnthropicProvider {
     fn provider_name(&self) -> &'static str {
@@ -187,9 +213,11 @@ impl LLMProvider for AnthropicProvider {
         let mut body = serde_json::json!({
             "model": self.model,
             "messages": converted,
-            "max_tokens": max_tokens,
-            "temperature": temperature
+            "max_tokens": max_tokens
         });
+        if anthropic_supports_temperature(&self.model) {
+            body["temperature"] = serde_json::json!(temperature);
+        }
         if let Some(system) = system {
             body["system"] = serde_json::Value::String(system);
         }
@@ -268,9 +296,11 @@ impl LLMProvider for AnthropicProvider {
             "model": self.model,
             "messages": converted,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "tools": tool_defs
         });
+        if anthropic_supports_temperature(&self.model) {
+            body["temperature"] = serde_json::json!(temperature);
+        }
         if let Some(system) = system {
             body["system"] = serde_json::Value::String(system);
         }
@@ -360,9 +390,11 @@ impl LLMProvider for AnthropicProvider {
             "model": self.model,
             "messages": converted,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "stream": true
         });
+        if anthropic_supports_temperature(&self.model) {
+            body["temperature"] = serde_json::json!(temperature);
+        }
         if let Some(system) = system {
             body["system"] = serde_json::Value::String(system);
         }
@@ -712,5 +744,21 @@ mod tests {
             n(Some("https://gw.example.com/anthropic/v1/messages")),
             "https://gw.example.com/anthropic"
         );
+    }
+
+    #[test]
+    fn temperature_omitted_only_for_opus_4_7_plus() {
+        // Opus 4.7+ removed sampling params → must omit temperature.
+        assert!(!anthropic_supports_temperature("claude-opus-4-7"));
+        assert!(!anthropic_supports_temperature("claude-opus-4-8"));
+        assert!(!anthropic_supports_temperature("anthropic.claude-opus-4-8")); // Bedrock prefix
+        assert!(!anthropic_supports_temperature("claude-opus-4-10")); // forward-compat
+
+        // Everything else still accepts temperature.
+        assert!(anthropic_supports_temperature("claude-opus-4-6"));
+        assert!(anthropic_supports_temperature("claude-opus-4-5"));
+        assert!(anthropic_supports_temperature("claude-sonnet-4-6"));
+        assert!(anthropic_supports_temperature("claude-haiku-4-5"));
+        assert!(anthropic_supports_temperature("claude-3-5-sonnet-20241022"));
     }
 }
