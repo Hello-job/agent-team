@@ -53,10 +53,17 @@ const iconMap = {
 }
 
 const colorMap = {
-  success: 'bg-green-900/90 border-green-500 text-green-200',
-  error: 'bg-red-900/90 border-red-500 text-red-200',
-  warning: 'bg-yellow-900/90 border-yellow-500 text-yellow-200',
-  info: 'bg-blue-900/90 border-blue-500 text-blue-200',
+  success: 'border-emerald-500/30 bg-emerald-500/10 text-ink',
+  error: 'border-red-500/30 bg-red-500/10 text-ink',
+  warning: 'border-amber-500/30 bg-amber-500/10 text-ink',
+  info: 'border-line bg-surface text-ink',
+}
+
+const iconColorMap = {
+  success: 'text-emerald-400',
+  error: 'text-red-400',
+  warning: 'text-amber-400',
+  info: 'text-ink-muted',
 }
 
 function ToastItem({ toast, onDismiss }: { toast: Toast, onDismiss: (id: string) => void }) {
@@ -75,13 +82,13 @@ function ToastItem({ toast, onDismiss }: { toast: Toast, onDismiss: (id: string)
 
   return (
     <div
-      className={`pointer-events-auto flex items-center gap-3 px-4 py-3 border-2 shadow-pixel-sm font-pixel text-sm uppercase tracking-tight max-w-sm transition-all duration-200 ${colorMap[toast.type]} ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}`}
+      className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg border shadow-soft text-sm max-w-sm transition-all duration-200 ${colorMap[toast.type]} ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}`}
     >
-      <Icon className="w-5 h-5 flex-shrink-0" />
+      <Icon className={`w-4 h-4 flex-shrink-0 ${iconColorMap[toast.type]}`} />
       <span className="flex-1 leading-snug">{toast.message}</span>
       <button
         onClick={() => { setVisible(false); setTimeout(() => onDismiss(toast.id), 200) }}
-        className="flex-shrink-0 hover:opacity-70"
+        className="flex-shrink-0 text-ink-faint transition-colors hover:text-ink-muted"
       >
         <X className="w-4 h-4" />
       </button>

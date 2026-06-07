@@ -3,16 +3,14 @@
 @tailwind utilities;
 
 :root {
-  font-family: "Pixelify Sans", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #1a1a1a;
-
+  color-scheme: dark;
+  color: #e7e9ec;
+  background-color: #0b0d10;
   font-synthesis: none;
-  text-rendering: pixelated;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -20,42 +18,82 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 20px 20px;
+  background-color: #0b0d10;
+}
+
+/* Quiet, thin scrollbars that match the dark surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 @layer components {
   .btn {
-    @apply px-4 py-2 border-2 border-black font-pixel shadow-pixel-sm active:shadow-pixel-active active:translate-x-[2px] active:translate-y-[2px] transition-all duration-75 uppercase tracking-wider;
+    @apply inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-md text-sm font-medium
+      transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-
   .btn-primary {
     @apply bg-primary-500 text-white hover:bg-primary-400;
   }
-
   .btn-secondary {
-    @apply bg-purple-600 text-white hover:bg-purple-500;
+    @apply bg-elevated text-ink border border-line hover:border-line-strong;
   }
-
   .btn-outline {
-    @apply bg-white border-2 border-black text-black hover:bg-gray-100;
+    @apply border border-line text-ink-muted hover:text-ink hover:bg-elevated;
   }
 
   .card {
-    @apply bg-[#2d2d2d] border-4 border-black p-6 shadow-pixel;
+    @apply bg-surface border border-line rounded-xl p-5;
   }
 
   .input {
-    @apply w-full px-4 py-2 bg-white border-4 border-black text-black font-pixel focus:outline-none focus:ring-0 placeholder:text-gray-400;
+    @apply w-full h-9 px-3 rounded-md bg-surface border border-line text-ink text-sm
+      placeholder:text-ink-faint transition-colors
+      focus:outline-none focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/20;
   }
 
   .label {
-    @apply block text-sm font-pixel text-gray-300 mb-1 uppercase tracking-tight;
+    @apply block text-xs font-medium text-ink-muted mb-1.5;
   }
+}
 
-  h1, h2, h3, h4 {
-    @apply font-press uppercase;
-  }
+/* Agent-network motif — restrained, living constellation of agents. */
+@keyframes net-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@keyframes net-ring {
+  0% { transform: scale(0.6); opacity: 0.6; }
+  80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes net-flow {
+  to { stroke-dashoffset: -16; }
+}
+.net-node {
+  animation: net-pulse 3.4s ease-in-out infinite;
+}
+.net-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: net-ring 3.4s ease-out infinite;
+}
+.net-flow {
+  stroke-dasharray: 2 7;
+  animation: net-flow 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .net-node, .net-ring, .net-flow { animation: none; }
 }

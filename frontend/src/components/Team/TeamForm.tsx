@@ -71,20 +71,20 @@ export default function TeamForm({ team, onClose }: Props) {
   ) || []
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 font-pixel">
-      <div className="bg-[#2d2d2d] border-4 border-black w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-pixel">
-        <div className="flex items-center justify-between p-6 border-b-4 border-black sticky top-0 bg-[#2d2d2d] z-10">
-          <h2 className="text-xl font-press text-white uppercase tracking-tighter">
-            {isEdit ? 'EDIT TEAM' : 'CREATE TEAM'}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-line bg-surface shadow-soft">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface px-6 py-5">
+          <h2 className="text-lg font-semibold tracking-tight text-ink">
+            {isEdit ? '编辑团队' : '创建团队'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white border-2 border-transparent hover:border-black p-1">
-            <X className="w-6 h-6" />
+          <button onClick={onClose} className="rounded-md p-1 text-ink-faint transition-colors hover:bg-elevated hover:text-ink">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="bg-black/20 p-4 border-2 border-black">
-            <label className="label uppercase tracking-tighter">团队名称</label>
+        <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          <div>
+            <label className="label">团队名称</label>
             <input
               type="text"
               className="input w-full"
@@ -94,61 +94,61 @@ export default function TeamForm({ team, onClose }: Props) {
             />
           </div>
 
-          <div className="bg-black/20 p-4 border-2 border-black">
-            <label className="label uppercase tracking-tighter">描述</label>
+          <div>
+            <label className="label">描述</label>
             <textarea
-              className="input w-full h-20"
+              className="input w-full h-24 py-2"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </div>
 
-          <div className="bg-black/20 p-4 border-2 border-black">
-            <label className="label uppercase tracking-tighter">协作模式</label>
+          <div>
+            <label className="label">协作模式</label>
             <select
-              className="input w-full appearance-none cursor-pointer"
+              className="input w-full cursor-pointer appearance-none"
               value={form.collaboration_mode}
               onChange={(e) => setForm({ ...form, collaboration_mode: e.target.value as TeamCreate['collaboration_mode'] })}
             >
-              <option value="roundtable">圆桌讨论 (ROUNDTABLE)</option>
-              <option value="pipeline">流水线 (PIPELINE)</option>
-              <option value="debate">辩论 (DEBATE)</option>
-              <option value="freeform">自由讨论 (FREEFORM)</option>
+              <option value="roundtable">圆桌讨论</option>
+              <option value="pipeline">流水线</option>
+              <option value="debate">对抗辩论</option>
+              <option value="freeform">自由协作</option>
             </select>
           </div>
 
-          <div className="bg-black/20 p-4 border-2 border-black">
-            <label className="label uppercase tracking-tighter mb-4">团队成员</label>
-            <div className="space-y-3 mb-6">
+          <div>
+            <label className="label">团队成员</label>
+            <div className="mb-3 space-y-2">
               {form.members?.length === 0 && (
-                <div className="text-center py-4 text-gray-500 uppercase text-xs border-2 border-dashed border-black/30">
-                  [ NO MEMBERS ADDED ]
+                <div className="rounded-lg border border-dashed border-line py-4 text-center text-xs text-ink-faint">
+                  尚未添加成员
                 </div>
               )}
               {form.members?.map((member, idx) => (
-                <div key={member.agent_id} className="flex items-center gap-4 bg-black/40 p-3 border-2 border-black shadow-pixel-sm transition-transform hover:translate-x-1">
-                  <GripVertical className="w-5 h-5 text-gray-500 cursor-grab" />
-                  <span className="font-press text-[10px] text-primary-400">#{idx + 1}</span>
-                  <span className="flex-1 text-white uppercase tracking-tight">{getAgentName(member.agent_id)}</span>
+                <div key={member.agent_id} className="flex items-center gap-3 rounded-lg border border-line bg-elevated p-3 transition-colors hover:border-line-strong">
+                  <GripVertical className="h-4 w-4 cursor-grab text-ink-faint" />
+                  <span className="font-mono text-[11px] text-primary-400">#{idx + 1}</span>
+                  <span className="flex-1 text-sm text-ink">{getAgentName(member.agent_id)}</span>
                   <button
                     type="button"
                     onClick={() => removeMember(member.agent_id)}
-                    className="text-red-400 hover:text-red-300 p-1 border-2 border-transparent hover:border-black active:bg-black transition-all"
+                    className="rounded-md p-1 text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               ))}
             </div>
 
             {availableAgents.length > 0 && (
-              <div className="flex gap-4">
+              <div className="flex gap-2">
                 <select
-                  className="input flex-1 appearance-none cursor-pointer"
+                  className="input flex-1 cursor-pointer appearance-none"
                   onChange={(e) => e.target.value && addMember(e.target.value)}
                   value=""
                 >
-                  <option value="">ADD AGENT...</option>
+                  <option value="">添加 agent…</option>
                   {availableAgents.map((agent: AgentListItem) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.name}
@@ -156,27 +156,27 @@ export default function TeamForm({ team, onClose }: Props) {
                   ))}
                 </select>
                 <button type="button" className="btn btn-secondary whitespace-nowrap">
-                  <Plus className="w-5 h-5" />
+                  <Plus className="h-4 w-4" />
                 </button>
               </div>
             )}
           </div>
 
-          <div className="flex justify-end gap-4 pt-6 border-t-4 border-black">
+          <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-5">
             {formError && (
-              <div className="w-full mb-4 text-xs font-press text-red-300 bg-red-900/50 border-2 border-red-500 p-3 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
+              <div className="mb-1 w-full rounded-md border border-red-500/25 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300">
                 {formError}
               </div>
             )}
             <button type="button" onClick={onClose} className="btn btn-secondary">
-              CANCEL
+              取消
             </button>
             <button
               type="submit"
               className="btn btn-primary"
               disabled={createTeam.isPending || updateTeam.isPending}
             >
-              {createTeam.isPending || updateTeam.isPending ? 'SAVING...' : 'SAVE TEAM'}
+              {createTeam.isPending || updateTeam.isPending ? '保存中…' : '保存'}
             </button>
           </div>
         </form>

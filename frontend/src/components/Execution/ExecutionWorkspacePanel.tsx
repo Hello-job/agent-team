@@ -173,10 +173,10 @@ export default function ExecutionWorkspacePanel({
   }, [editorContent, executionId, refreshList, selectedPath])
 
   return (
-    <div className="w-96 border-r-4 border-black bg-[#2d2d2d] flex flex-col font-pixel">
-      <div className="p-4 border-b-4 border-black bg-[#1a1a1a]">
+    <div className="w-96 border-r border-line bg-surface flex flex-col">
+      <div className="p-4 border-b border-line bg-base">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-press text-white uppercase tracking-tighter">WORKSPACE</div>
+          <div className="text-sm font-semibold tracking-tight text-ink">工作区</div>
           <div className="flex items-center gap-2">
             <button
               className="btn btn-outline p-2"
@@ -188,7 +188,7 @@ export default function ExecutionWorkspacePanel({
             </button>
             {workspacePath && (
               <button
-                className="btn btn-outline p-2 text-red-500 border-red-500 hover:bg-red-900 shadow-pixel-sm"
+                className="btn btn-outline p-2 text-red-400 hover:bg-red-500/10 hover:text-red-400"
                 onClick={() => void clearWorkspace()}
                 disabled={isSettingWorkspace}
                 title="清除工作目录"
@@ -198,14 +198,14 @@ export default function ExecutionWorkspacePanel({
             )}
           </div>
         </div>
-        <div className="text-[10px] text-primary-400 break-all uppercase leading-tight bg-black/40 p-2 border-2 border-black">
-          {workspacePath || '[ NOT SET - CHOOSE A DIRECTORY ]'}
+        <div className="text-[11px] font-mono text-primary-400 break-all leading-tight bg-elevated rounded-md border border-line p-2">
+          {workspacePath || '未设置 · 选择一个目录'}
         </div>
       </div>
 
-      <div className="p-3 border-b-2 border-black flex items-center justify-between gap-2 bg-[#252525]">
-        <div className="text-[10px] font-press text-gray-500 truncate uppercase">
-          DIR: {currentDir ? `/${currentDir}` : '/'}
+      <div className="p-3 border-b border-line flex items-center justify-between gap-2 bg-base">
+        <div className="text-[11px] font-mono text-ink-faint truncate">
+          {currentDir ? `/${currentDir}` : '/'}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -228,32 +228,32 @@ export default function ExecutionWorkspacePanel({
       </div>
 
       {!workspacePath ? (
-        <div className="p-6 text-xs text-gray-400 uppercase leading-relaxed text-center italic opacity-60">
-          选择一个工作目录后，可以在这里浏览和编辑文件（将通过 RUST COMMAND 读取/写入）。
+        <div className="p-6 text-xs text-ink-muted leading-relaxed text-center">
+          选择一个工作目录后，可以在这里浏览和编辑文件。
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           {entries.length === 0 && !isListing ? (
-            <div className="p-6 text-xs text-gray-500 text-center uppercase tracking-tighter">[ 目录为空 ]</div>
+            <div className="p-6 text-xs text-ink-faint text-center">目录为空</div>
           ) : (
-            <ul className="divide-y-2 divide-black">
+            <ul className="divide-y divide-line">
               {entries.map((entry) => (
                 <li key={entry.path}>
                   <button
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-primary-600 group transition-all"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-elevated group transition-colors"
                     onClick={() => void openEntry(entry)}
                     title={entry.path}
                   >
                     {entry.is_dir ? (
-                      <Folder className="w-5 h-5 text-blue-400 group-hover:text-white flex-shrink-0" />
+                      <Folder className="w-[18px] h-[18px] text-primary-400 flex-shrink-0" />
                     ) : (
-                      <FileText className="w-5 h-5 text-gray-400 group-hover:text-white flex-shrink-0" />
+                      <FileText className="w-[18px] h-[18px] text-ink-faint flex-shrink-0" />
                     )}
-                    <span className="text-xs text-gray-200 group-hover:text-white truncate flex-1 uppercase tracking-tight">
+                    <span className="text-xs text-ink-muted group-hover:text-ink truncate flex-1">
                       {basename(entry.path)}{entry.is_dir ? '/' : ''}
                     </span>
                     {!entry.is_dir && typeof entry.size === 'number' && (
-                      <span className="text-[10px] text-gray-500 group-hover:text-white flex-shrink-0 font-press">
+                      <span className="text-[11px] text-ink-faint flex-shrink-0 font-mono">
                         {entry.size} B
                       </span>
                     )}
@@ -266,14 +266,14 @@ export default function ExecutionWorkspacePanel({
       )}
 
       {selectedPath && workspacePath && (
-        <div className="border-t-4 border-black flex flex-col h-72 bg-[#1a1a1a]">
-          <div className="p-3 border-b-2 border-black bg-[#2d2d2d] flex items-center justify-between gap-2">
-            <div className="text-[10px] font-press text-primary-400 truncate uppercase" title={selectedPath}>
-              EDIT: {basename(selectedPath)}
+        <div className="border-t border-line flex flex-col h-72 bg-base">
+          <div className="p-3 border-b border-line bg-surface flex items-center justify-between gap-2">
+            <div className="text-[11px] font-mono text-primary-400 truncate" title={selectedPath}>
+              {basename(selectedPath)}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {saveBanner && (
-                <span className="text-[10px] font-press text-green-500 animate-pulse">{saveBanner}</span>
+                <span className="text-[11px] font-mono text-emerald-400">{saveBanner}</span>
               )}
               <button
                 className="btn btn-primary p-2"
@@ -286,7 +286,7 @@ export default function ExecutionWorkspacePanel({
             </div>
           </div>
           <textarea
-            className="flex-1 w-full px-4 py-3 bg-black text-gray-200 text-xs font-mono resize-none focus:outline-none"
+            className="flex-1 w-full px-4 py-3 bg-base text-ink-muted text-xs font-mono resize-none focus:outline-none"
             value={editorContent}
             onChange={(e) => setEditorContent(e.target.value)}
             disabled={isReading}
@@ -296,8 +296,8 @@ export default function ExecutionWorkspacePanel({
       )}
 
       {error && (
-        <div className="p-4 border-t-4 border-black bg-red-900/50 text-red-300 text-[10px] font-press uppercase tracking-tighter leading-relaxed">
-          ERROR: {error}
+        <div className="p-4 border-t border-line bg-red-500/10 text-red-400 text-[11px] leading-relaxed">
+          出错了：{error}
         </div>
       )}
     </div>

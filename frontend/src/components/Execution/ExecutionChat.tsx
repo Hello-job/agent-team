@@ -16,12 +16,12 @@ export default function ExecutionChat({ messages, status, error }: Props) {
   }, [messages])
 
   return (
-    <div className="flex flex-col h-full font-pixel">
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#1a1a1a]">
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-base">
         {messages.length === 0 && (status === 'connected' || status === 'connecting') && (
-          <div className="text-center text-gray-500 py-12 uppercase tracking-widest">
-            <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-primary-500" />
-            [ WAITING FOR DISCUSSION TO START... ]
+          <div className="text-center text-ink-faint py-12 text-sm">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-400" />
+            等待讨论开始…
           </div>
         )}
 
@@ -30,8 +30,8 @@ export default function ExecutionChat({ messages, status, error }: Props) {
         ))}
 
         {error && (
-          <div className="bg-red-900/50 text-red-400 p-4 border-2 border-red-500 shadow-pixel-sm uppercase text-xs">
-            ERROR: {error}
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 p-4 text-sm">
+            出错了：{error}
           </div>
         )}
 
@@ -39,9 +39,9 @@ export default function ExecutionChat({ messages, status, error }: Props) {
       </div>
 
       {status === 'connecting' && (
-        <div className="p-4 border-t-4 border-black bg-[#2d2d2d] text-center text-gray-400 uppercase text-[10px] font-press tracking-tighter">
-          <Loader2 className="w-4 h-4 animate-spin inline mr-3" />
-          CONNECTING...
+        <div className="p-3 border-t border-line bg-surface text-center text-ink-muted text-[11px] font-mono uppercase tracking-wider">
+          <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-2 align-middle" />
+          连接中…
         </div>
       )}
     </div>
@@ -75,56 +75,68 @@ function MessageBubble({ message }: { message: ExecutionMessage }) {
   }
 
   return (
-    <div className={`flex gap-4 ${isUser ? 'flex-row-reverse' : ''} group`}>
-      <div className={`w-12 h-12 border-4 border-black flex items-center justify-center flex-shrink-0 shadow-pixel-sm ${
-        isUser ? 'bg-primary-600' : isTool ? 'bg-purple-700' : isSystem ? 'bg-gray-600' : 'bg-green-600'
+    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''} group`}>
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+        isUser
+          ? 'bg-primary-500/12 ring-1 ring-primary-500/25'
+          : isTool
+          ? 'bg-elevated ring-1 ring-line'
+          : isSystem
+          ? 'bg-elevated ring-1 ring-line'
+          : 'bg-primary-500/12 ring-1 ring-primary-500/25'
       }`}>
-        {isUser ? <User className="w-6 h-6 text-white" /> : isTool ? <Wrench className="w-6 h-6 text-white" /> : <Bot className="w-6 h-6 text-white" />}
+        {isUser ? (
+          <User className="w-[18px] h-[18px] text-primary-400" />
+        ) : isTool ? (
+          <Wrench className="w-[18px] h-[18px] text-ink-muted" />
+        ) : (
+          <Bot className={`w-[18px] h-[18px] ${isSystem ? 'text-ink-muted' : 'text-primary-400'}`} />
+        )}
       </div>
 
         <div className={`max-w-[85%] ${isUser ? 'text-right' : ''}`}>
         {message.sender_name && (
-          <div className="text-[10px] font-press text-primary-400 mb-2 uppercase tracking-tighter">
-            {isTool ? `${toolName}${toolAgent ? ` · ${toolAgent}` : ''}` : message.sender_name}
+          <div className="text-[11px] font-mono text-ink-muted mb-1.5">
+            <span className="text-primary-400">{isTool ? `${toolName}${toolAgent ? ` · ${toolAgent}` : ''}` : message.sender_name}</span>
             {isTool && (
-              <span className="ml-3 text-gray-500">
+              <span className="ml-2 text-ink-faint">
                 {toolStatus}{toolDuration ? ` · ${toolDuration}` : ''}{toolError ? ` · ${toolError}` : ''}
               </span>
             )}
           </div>
         )}
-        <div className={`p-4 border-4 border-black shadow-pixel transition-transform group-hover:translate-x-[2px] group-hover:translate-y-[2px] group-hover:shadow-pixel-sm ${
+        <div className={`p-3.5 rounded-2xl text-sm transition-colors ${
           isUser
-            ? 'bg-primary-600 text-white'
+            ? 'bg-primary-500/12 border border-primary-500/25 text-ink'
             : isTool
-            ? 'bg-[#241a33] text-white'
+            ? 'bg-base/60 border border-line text-ink-muted'
             : isSystem
-            ? 'bg-[#333] text-gray-400'
-            : 'bg-[#2d2d2d] text-white'
+            ? 'bg-elevated border border-line text-ink-muted'
+            : 'bg-surface border border-line text-ink'
         }`}>
           {isTool ? (
             <details className="text-sm">
-              <summary className="cursor-pointer select-none whitespace-pre-wrap leading-relaxed">
+              <summary className="cursor-pointer select-none whitespace-pre-wrap leading-relaxed text-ink">
                 {message.content || `${toolStatus} ${toolName}`}
               </summary>
               <div className="mt-3 space-y-3">
                 {message.phase === 'tool_call' && toolMeta?.arguments !== undefined && (
                   <div>
-                    <div className="text-[10px] font-press text-gray-400 mb-2 uppercase tracking-tighter">ARGUMENTS</div>
-                    <pre className="whitespace-pre-wrap text-xs leading-relaxed bg-black/30 p-3 border-2 border-black overflow-x-auto">
+                    <div className="text-[11px] font-mono text-ink-faint mb-1.5 uppercase tracking-wider">arguments</div>
+                    <pre className="whitespace-pre-wrap text-xs leading-relaxed font-mono text-ink-muted bg-base rounded-lg border border-line p-3 overflow-x-auto">
                       {jsonPreview(toolMeta.arguments)}
                     </pre>
                   </div>
                 )}
                 {message.phase === 'tool_result' && (
                   <div>
-                    <div className="text-[10px] font-press text-gray-400 mb-2 uppercase tracking-tighter">OUTPUT</div>
+                    <div className="text-[11px] font-mono text-ink-faint mb-1.5 uppercase tracking-wider">output</div>
                     {toolName === 'read_file' && toolMeta?.ok === true && (toolMeta?.output as { truncated?: boolean } | undefined)?.truncated === true && (
-                      <div className="mb-3 text-[10px] font-press text-yellow-300 bg-yellow-900/30 border-2 border-yellow-500 p-3 shadow-pixel-sm uppercase tracking-tighter leading-relaxed">
+                      <div className="mb-3 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 leading-relaxed">
                         文件过大，已截断。使用 offset 参数读取更多内容
                       </div>
                     )}
-                    <pre className="whitespace-pre-wrap text-xs leading-relaxed bg-black/30 p-3 border-2 border-black overflow-x-auto">
+                    <pre className="whitespace-pre-wrap text-xs leading-relaxed font-mono text-ink-muted bg-base rounded-lg border border-line p-3 overflow-x-auto">
                       {jsonPreview(toolMeta?.ok === false ? { error: toolMeta?.error } : toolMeta?.output)}
                     </pre>
                   </div>
@@ -140,11 +152,11 @@ function MessageBubble({ message }: { message: ExecutionMessage }) {
             </p>
           )}
         </div>
-        <div className="text-[10px] font-press text-gray-500 mt-3 uppercase tracking-tighter">
-          ROUND {message.round} · {message.phase}
+        <div className="text-[11px] font-mono text-ink-faint mt-1.5">
+          round {message.round} · {message.phase}
           {totalTokens > 0 && !isTool && (
-            <span className={`ml-3 text-gray-500 ${message.tokens_estimated ? 'cursor-help' : ''}`} title={message.tokens_estimated ? '估算值' : undefined}>
-              TOKENS: {message.tokens_estimated ? `~${totalTokens}` : totalTokens}
+            <span className={`ml-2 ${message.tokens_estimated ? 'cursor-help' : ''}`} title={message.tokens_estimated ? '估算值' : undefined}>
+              tokens: {message.tokens_estimated ? `~${totalTokens}` : totalTokens}
             </span>
           )}
         </div>
