@@ -16,20 +16,9 @@ Everything runs locally. Data lives in SQLite. Bring your own OpenAI-compatible 
 
 ## Screenshots
 
-<!--
-  Drop captured images into docs/screenshots/ (see docs/screenshots/README.md for
-  the recommended shots and sizes), then uncomment the block below.
-
-  <p align="center">
-    <img src="docs/screenshots/execution.gif" alt="A live multi-agent discussion" width="800"/>
-  </p>
-
-  | Home | Agents | Debate in progress |
-  |------|--------|--------------------|
-  | ![Home](docs/screenshots/home.png) | ![Agents](docs/screenshots/agents.png) | ![Debate](docs/screenshots/debate.png) |
--->
-
-> 📸 Screenshots & a short demo GIF live in [`docs/screenshots/`](docs/screenshots/).
+| Home | Agents | Debate in progress |
+|------|--------|--------------------|
+| ![Home](docs/screenshots/home.png) | ![Agents](docs/screenshots/agents.png) | ![Debate](docs/screenshots/debate.png) |
 
 ## Collaboration Modes
 
