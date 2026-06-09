@@ -1,10 +1,39 @@
 import { create } from 'zustand'
 import type { Agent, Team, Execution } from '@/types'
 
+export type Theme = 'dark' | 'light' | 'system'
+
+export function applyTheme(theme: Theme) {
+  if (typeof window === 'undefined') return
+  const root = window.document.documentElement
+  root.classList.remove('light', 'dark')
+  
+  let actualTheme: 'light' | 'dark' = 'dark'
+  if (theme === 'system') {
+    actualTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  } else {
+    actualTheme = theme
+  }
+  
+  root.classList.add(actualTheme)
+  root.style.colorScheme = actualTheme
+}
+
+const getInitialTheme = (): Theme => {
+  if (typeof window === 'undefined') return 'system'
+  const saved = localStorage.getItem('app-theme')
+  if (saved === 'dark' || saved === 'light' || saved === 'system') {
+    return saved
+  }
+  return 'system'
+}
+
 interface AppState {
   // UI state
   sidebarOpen: boolean
   toggleSidebar: () => void
+  theme: Theme
+  setTheme: (theme: Theme) => void
 
   // Selected items
   selectedAgent: Agent | null
@@ -31,6 +60,12 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  theme: getInitialTheme(),
+  setTheme: (theme) => {
+    localStorage.setItem('app-theme', theme)
+    set({ theme })
+    applyTheme(theme)
+  },
 
   selectedAgent: null,
   selectedTeam: null,

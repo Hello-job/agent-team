@@ -4,8 +4,8 @@
 
 type Node = { x: number; y: number; accent?: boolean; delay?: number }
 
-const ACCENT = '#2ed3e6'
-const MUTED = '#7c8593'
+const ACCENT = 'var(--network-accent, #2ed3e6)'
+const MUTED = 'var(--network-muted, #7c8593)'
 
 const hub: Node = { x: 250, y: 150, accent: true }
 const nodes: Node[] = [
@@ -58,7 +58,7 @@ export function AgentNetwork({ className }: { className?: string }) {
             y1={a.y}
             x2={b.x}
             y2={b.y}
-            stroke="rgba(255,255,255,0.08)"
+            stroke="var(--network-line, rgba(255,255,255,0.08))"
             strokeWidth="1"
           />
         ))}

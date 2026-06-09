@@ -7,7 +7,7 @@ const navItems = [
   { path: '/agents', label: 'Agents', icon: Bot },
   { path: '/teams', label: '团队', icon: Users },
   { path: '/execution', label: '讨论', icon: Play },
-  { path: '/models', label: 'API 配置', icon: Settings },
+  { path: '/settings', label: '设置', icon: Settings },
 ]
 
 export default function Layout() {

@@ -192,7 +192,7 @@ export default function ExecutionPage() {
               <p className="text-sm text-amber-300 mb-4">
                 需要先配置 API Key 才能开始讨论。
               </p>
-              <button className="btn btn-primary w-full" onClick={() => navigate('/models')}>
+              <button className="btn btn-primary w-full" onClick={() => navigate('/settings')}>
                 去配置 API
               </button>
             </div>
@@ -382,7 +382,7 @@ export default function ExecutionPage() {
               <button
                 type="button"
                 className="ml-2 underline text-amber-200 hover:text-amber-100"
-                onClick={() => navigate('/models')}
+                onClick={() => navigate('/settings')}
               >
                 去配置
               </button>
