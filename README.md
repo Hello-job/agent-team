@@ -36,27 +36,45 @@ The frontend talks to the Rust core exclusively through Tauri's typed IPC
 sandboxed tool layer, and SQLite persistence.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, sans-serif','fontSize':'14px','primaryColor':'#ffffff','primaryTextColor':'#1f2328','primaryBorderColor':'#d0d7de','lineColor':'#8c959f','clusterBkg':'#f6f8fa','clusterBorder':'#d0d7de'}}}%%
 flowchart TD
     subgraph FE["Frontend · React + TS"]
-        UI["Pages & components"]
+        direction TB
+        UI["Pages · components"]
         Q["TanStack Query hooks"]
+        UI --> Q
     end
+
     subgraph CORE["Rust core · Tauri"]
-        CMD["commands/ (IPC handlers)"]
-        ORCH["orchestration/<br/>roundtable · debate · pipeline"]
-        AG["AgentInstance"]
-        LLM["llm/ provider<br/>OpenAI-compatible · Anthropic"]
-        TOOL["tools/ executor + builtins<br/>(path-sandboxed)"]
+        direction TB
+        CMD["commands/ · typed IPC handlers"]
+        ORCH["orchestration/<br/>roundtable · debate · pipeline · freeform"]
+        CTRL["control plane<br/>pause · stop · budget"]
+        AG["AgentInstance<br/>ReAct tool loop"]
+        LLM["llm/ provider<br/>OpenAI · Anthropic · streaming SSE"]
+        TOOL["tools/ executor + builtins<br/>path-sandboxed"]
         DB[("SQLite store")]
     end
-    WS["Workspace files"]
-    API["LLM API"]
 
-    UI --> Q -->|invoke| CMD
-    CMD --> ORCH --> AG
-    AG --> LLM -->|HTTPS| API
-    AG --> TOOL --> WS
+    API(["LLM API"])
+    WS(["Workspace files"])
+
+    Q -->|invoke| CMD
+    CMD --> ORCH
     CMD --> DB
+    ORCH <--> CTRL
+    ORCH --> AG
+    AG --> LLM -->|HTTPS · SSE| API
+    AG --> TOOL --> WS
+
+    style FE fill:#f6f8fa,stroke:#d0d7de
+    style CORE fill:#f6f8fa,stroke:#d0d7de
+    classDef core fill:#e6f7fb,stroke:#0d93a8,color:#0b3b44;
+    classDef ext fill:#ffffff,stroke:#8c959f,color:#57606a,stroke-dasharray:4 3;
+    classDef store fill:#fff4e6,stroke:#bc6c25,color:#5c3a13;
+    class ORCH,CTRL,LLM,TOOL core;
+    class API,WS ext;
+    class DB store;
 ```
 
 The **Debate** engine is the most structured mode — it auto-assigns a judge,
@@ -64,6 +82,7 @@ splits the rest into pro/con, runs opening statements and rebuttal rounds, then
 asks the judge for a verdict:
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, sans-serif','actorBkg':'#e6f7fb','actorBorder':'#0d93a8','actorTextColor':'#0b3b44','actorLineColor':'#8c959f','signalColor':'#57606a','signalTextColor':'#1f2328','labelBoxBkg':'#f6f8fa','labelBoxBorderColor':'#d0d7de','labelTextColor':'#1f2328','loopTextColor':'#57606a','noteBkgColor':'#fff4e6','noteBorderColor':'#bc6c25','noteTextColor':'#5c3a13'}}}%%
 sequenceDiagram
     participant O as Orchestrator
     participant P as Pro team
