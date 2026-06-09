@@ -65,7 +65,7 @@ export default function SettingsPage() {
                   }`}
                 >
                   {/* Mockup Preview */}
-                  <div className="h-28 bg-[#f8fafc] p-3 border-b border-line flex flex-col justify-between select-none">
+                  <div className="h-28 bg-[#f8f9fa] p-3 border-b border-line flex flex-col justify-between select-none">
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full bg-slate-300" />
                       <div className="w-10 h-1.5 rounded bg-slate-200" />
@@ -74,9 +74,9 @@ export default function SettingsPage() {
                       <div className="flex-1 h-12 rounded bg-white border border-slate-200 p-1.5 flex flex-col gap-1">
                         <div className="w-1/2 h-1 rounded bg-slate-200" />
                         <div className="w-3/4 h-1 rounded bg-slate-100" />
-                        <div className="w-1/3 h-1 rounded bg-[#0891b2]/30" />
+                        <div className="w-1/3 h-1 rounded bg-[#18181b]/30" />
                       </div>
-                      <div className="w-6 h-12 rounded bg-[#f1f5f9] border border-slate-200" />
+                      <div className="w-6 h-12 rounded bg-[#f1f3f5] border border-slate-200" />
                     </div>
                   </div>
                   {/* Details */}
@@ -106,24 +106,24 @@ export default function SettingsPage() {
                   }`}
                 >
                   {/* Mockup Preview */}
-                  <div className="h-28 bg-[#0b0d10] p-3 border-b border-line flex flex-col justify-between select-none">
+                  <div className="h-28 bg-[#161618] p-3 border-b border-line flex flex-col justify-between select-none">
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full bg-zinc-800" />
                       <div className="w-10 h-1.5 rounded bg-zinc-800" />
                     </div>
                     <div className="flex gap-2">
-                      <div className="flex-1 h-12 rounded bg-[#111317] border border-zinc-900 p-1.5 flex flex-col gap-1">
+                      <div className="flex-1 h-12 rounded bg-[#121214] border border-zinc-900 p-1.5 flex flex-col gap-1">
                         <div className="w-1/2 h-1 rounded bg-zinc-800" />
                         <div className="w-3/4 h-1 rounded bg-zinc-900" />
-                        <div className="w-1/3 h-1 rounded bg-[#13b6cc]/30" />
+                        <div className="w-1/3 h-1 rounded bg-white/30" />
                       </div>
-                      <div className="w-6 h-12 rounded bg-[#171a1f] border border-zinc-900" />
+                      <div className="w-6 h-12 rounded bg-[#121214] border border-zinc-900" />
                     </div>
                   </div>
                   {/* Details */}
                   <div className="p-4 flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-ink group-hover:text-primary-400 transition-colors">深色模式</div>
+                      <div className="text-sm font-medium text-ink group-hover:text-primary-450 transition-colors">深色模式</div>
                       <div className="text-[11px] text-ink-muted mt-0.5">沉浸护眼，展现科技极客美学</div>
                     </div>
                     <div className={`p-2 rounded-lg border transition-colors ${
@@ -148,7 +148,7 @@ export default function SettingsPage() {
                 >
                   {/* Mockup Preview */}
                   <div className="h-28 bg-transparent flex border-b border-line select-none relative overflow-hidden">
-                    <div className="w-1/2 bg-[#f8fafc] p-3 flex flex-col justify-between">
+                    <div className="w-1/2 bg-[#f8f9fa] p-3 flex flex-col justify-between">
                       <div className="flex items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full bg-slate-300" />
                         <div className="w-8 h-1.5 rounded bg-slate-200" />
@@ -158,12 +158,12 @@ export default function SettingsPage() {
                         <div className="w-3/4 h-1 rounded bg-slate-100" />
                       </div>
                     </div>
-                    <div className="w-1/2 bg-[#0b0d10] p-3 flex flex-col justify-between">
+                    <div className="w-1/2 bg-[#161618] p-3 flex flex-col justify-between">
                       <div className="flex items-center gap-1.5 justify-end">
                         <div className="w-8 h-1.5 rounded bg-zinc-800" />
                         <div className="w-2 h-2 rounded-full bg-zinc-800" />
                       </div>
-                      <div className="h-12 rounded bg-[#111317] border border-zinc-900 p-1 flex flex-col gap-1 overflow-hidden">
+                      <div className="h-12 rounded bg-[#121214] border border-zinc-900 p-1 flex flex-col gap-1 overflow-hidden">
                         <div className="w-full h-1 rounded bg-zinc-800" />
                         <div className="w-3/4 h-1 rounded bg-zinc-900" />
                       </div>

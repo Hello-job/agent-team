@@ -16,7 +16,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-base text-ink">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-[232px] bg-surface border-r border-line flex flex-col">
+      <aside className="fixed inset-y-0 left-0 w-[232px] bg-sidebar border-r border-line flex flex-col">
         {/* Brand */}
         <div className="flex items-center gap-3 h-16 px-5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500/15 ring-1 ring-primary-500/25">

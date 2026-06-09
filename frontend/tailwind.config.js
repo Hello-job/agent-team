@@ -33,6 +33,7 @@ export default {
         base: 'rgb(var(--color-base) / <alpha-value>)',
         surface: 'rgb(var(--color-surface) / <alpha-value>)',
         elevated: 'rgb(var(--color-elevated) / <alpha-value>)',
+        sidebar: 'rgb(var(--color-sidebar) / <alpha-value>)',
         // Hairline borders — low contrast, never solid black.
         line: 'var(--color-line)',
         'line-strong': 'var(--color-line-strong)',
