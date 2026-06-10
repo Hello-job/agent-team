@@ -23,7 +23,7 @@ function normalize(raw: unknown): ModelConfig | null {
     user_id: r.user_id ? String(r.user_id) : undefined,
     name: String(r.name),
     description: r.description ? String(r.description) : undefined,
-    provider: 'openai_compatible',
+    provider: r.provider === 'anthropic' ? 'anthropic' : 'openai_compatible',
     model_id: String(r.model_id),
     api_key: r.api_key ? String(r.api_key) : undefined,
     base_url: r.base_url ? String(r.base_url) : undefined,
@@ -75,7 +75,7 @@ export function createModelConfig(data: ModelConfigCreate): ModelConfig {
     user_id: 'local',
     name: data.name,
     description: data.description,
-    provider: 'openai_compatible',
+    provider: data.provider,
     model_id: data.model_id,
     api_key: data.api_key?.trim() ? data.api_key.trim() : undefined,
     base_url: data.base_url?.trim() ? data.base_url.trim() : undefined,
@@ -103,6 +103,7 @@ export function updateModelConfig(id: string, update: ModelConfigUpdate): ModelC
     ...existing,
     name: update.name ?? existing.name,
     description: update.description ?? existing.description,
+    provider: update.provider ?? existing.provider,
     model_id: update.model_id ?? existing.model_id,
     base_url: update.base_url ?? existing.base_url,
     api_key: update.api_key?.trim() ? update.api_key.trim() : existing.api_key,
@@ -143,7 +144,7 @@ export function buildExecutionLLMConfig(): ExecutionLLMConfig | null {
   if (!defaultConfig?.api_key?.trim()) return null
 
   const toRuntime = (c: ModelConfig): LLMRuntimeConfig => ({
-    provider: 'openai_compatible',
+    provider: c.provider,
     model_id: c.model_id,
     api_key: c.api_key || '',
     base_url: c.base_url,

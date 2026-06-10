@@ -236,9 +236,13 @@ export interface BudgetConfig {
   warning_thresholds: number[]
 }
 
+// Which LLM provider a config targets. The backend picks the provider impl
+// (OpenAI-compatible vs Anthropic) from this field.
+export type LLMProviderKind = 'openai_compatible' | 'anthropic'
+
 // Runtime LLM config passed to backend per execution
 export interface LLMRuntimeConfig {
-  provider: 'openai_compatible'
+  provider: LLMProviderKind
   model_id: string
   api_key: string
   base_url?: string
@@ -266,7 +270,7 @@ export interface ModelConfig {
   user_id?: string
   name: string
   description?: string
-  provider: 'openai_compatible'
+  provider: LLMProviderKind
   model_id: string
   api_key?: string
   base_url?: string
@@ -282,7 +286,7 @@ export interface ModelConfig {
 export interface ModelConfigCreate {
   name: string
   description?: string
-  provider: 'openai_compatible'
+  provider: LLMProviderKind
   model_id: string
   api_key?: string
   base_url?: string
@@ -291,7 +295,7 @@ export interface ModelConfigCreate {
 export interface ModelConfigUpdate {
   name?: string
   description?: string
-  provider?: 'openai_compatible'
+  provider?: LLMProviderKind
   model_id?: string
   api_key?: string
   base_url?: string

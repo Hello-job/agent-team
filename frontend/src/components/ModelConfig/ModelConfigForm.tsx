@@ -21,7 +21,7 @@ export default function ModelConfigForm({ config, onClose }: Props) {
   const [form, setForm] = useState<ModelConfigCreate>({
     name: config?.name || '',
     description: config?.description || '',
-    provider: 'openai_compatible',
+    provider: config?.provider || 'openai_compatible',
     model_id: config?.model_id || '',
     api_key: '',
     base_url: config?.base_url || '',
@@ -116,9 +116,14 @@ export default function ModelConfigForm({ config, onClose }: Props) {
 
           <div>
             <label className="label">提供商</label>
-            <div className="input flex items-center text-ink-muted bg-elevated cursor-not-allowed">
-              OpenAI 兼容 API
-            </div>
+            <select
+              className="input"
+              value={form.provider}
+              onChange={(e) => handleChange('provider', e.target.value)}
+            >
+              <option value="openai_compatible">OpenAI 兼容 API</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
           </div>
 
           <div>
@@ -129,7 +134,11 @@ export default function ModelConfigForm({ config, onClose }: Props) {
               value={form.model_id}
               onChange={(e) => handleChange('model_id', e.target.value)}
               required
-              placeholder="例如：gpt-4o、llama3.1"
+              placeholder={
+                form.provider === 'anthropic'
+                  ? '例如：claude-opus-4-8、claude-sonnet-4-6'
+                  : '例如：gpt-4o、llama3.1'
+              }
             />
           </div>
 
@@ -142,7 +151,9 @@ export default function ModelConfigForm({ config, onClose }: Props) {
               onChange={(e) => handleChange('api_key', e.target.value)}
               placeholder={isEdit ? '留空保持当前密钥' : '输入你的 API 密钥'}
             />
-            <p className="text-xs text-ink-faint mt-1.5">OpenAI 兼容 API 的密钥</p>
+            <p className="text-xs text-ink-faint mt-1.5">
+              {form.provider === 'anthropic' ? 'Anthropic 的 API 密钥' : 'OpenAI 兼容 API 的密钥'}
+            </p>
           </div>
 
           <div>
@@ -152,10 +163,24 @@ export default function ModelConfigForm({ config, onClose }: Props) {
               className="input font-mono"
               value={form.base_url || ''}
               onChange={(e) => handleChange('base_url', e.target.value)}
-              placeholder="例如：https://api.openai.com/v1"
+              placeholder={
+                form.provider === 'anthropic'
+                  ? '例如：https://api.anthropic.com（可留空）'
+                  : '例如：https://api.openai.com/v1'
+              }
             />
             <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
-              如果文档写的是 <span className="font-mono">/v1/chat/completions</span>，这里通常应填到 <span className="font-mono">/v1</span>。
+              {form.provider === 'anthropic' ? (
+                <>
+                  留空使用 Anthropic 官方端点；兼容网关填到 host 即可（会自动补{' '}
+                  <span className="font-mono">/v1/messages</span>）。
+                </>
+              ) : (
+                <>
+                  如果文档写的是 <span className="font-mono">/v1/chat/completions</span>，这里通常应填到{' '}
+                  <span className="font-mono">/v1</span>。
+                </>
+              )}
             </p>
           </div>
 
