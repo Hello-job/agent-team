@@ -14,11 +14,10 @@ the project layout, and the quality bar every change is expected to clear.
 
 ```bash
 # Install JS dependencies for both workspaces
-npm --prefix frontend install
-npm --prefix backend install
+npm run install:all
 
 # Run the desktop app in dev mode (hot-reloads the React frontend)
-npm --prefix backend run tauri:dev
+npm run dev
 ```
 
 The frontend dev server runs on `http://localhost:3000`; Tauri loads it

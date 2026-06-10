@@ -88,11 +88,10 @@ Tauri 2 (Rust) · React 18 · TypeScript · Tailwind CSS · SQLite · Zustand ·
 
 ```bash
 # Install dependencies
-npm --prefix frontend install
-npm --prefix backend install
+npm run install:all
 
 # Run in dev mode
-npm --prefix backend run tauri:dev
+npm run dev
 ```
 
 Requires Rust toolchain and Node.js >= 18. See the
@@ -102,7 +101,7 @@ setup, and [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow.
 ## Build
 
 ```bash
-npm --prefix backend run tauri:build
+npm run build
 ```
 
 Output in `backend/target/release/bundle/`. Tagged pushes (`v*`) build installers

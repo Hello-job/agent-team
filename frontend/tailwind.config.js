@@ -30,31 +30,32 @@ export default {
       },
       colors: {
         // Surfaces — calm, near-black, one step of elevation at a time.
-        base: '#0b0d10',
-        surface: '#111317',
-        elevated: '#171a1f',
+        base: 'rgb(var(--color-base) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface) / <alpha-value>)',
+        elevated: 'rgb(var(--color-elevated) / <alpha-value>)',
+        sidebar: 'rgb(var(--color-sidebar) / <alpha-value>)',
         // Hairline borders — low contrast, never solid black.
-        line: 'rgba(255,255,255,0.07)',
-        'line-strong': 'rgba(255,255,255,0.12)',
+        line: 'var(--color-line)',
+        'line-strong': 'var(--color-line-strong)',
         // Text hierarchy.
-        ink: '#e7e9ec',
-        'ink-muted': '#9ba1a9',
-        'ink-faint': '#646a73',
+        ink: 'rgb(var(--color-ink) / <alpha-value>)',
+        'ink-muted': 'rgb(var(--color-ink-muted) / <alpha-value>)',
+        'ink-faint': 'rgb(var(--color-ink-faint) / <alpha-value>)',
         // Single accent (cyan-teal). `primary` is retuned in place so every
         // existing `primary-*` utility across the app adopts the new accent.
         // Reads "tech / terminal", glows well on near-black.
         primary: {
-          50: '#ecfeff',
-          100: '#cef9fd',
-          200: '#a2f1f9',
-          300: '#67e4f1',
-          400: '#2ed3e6',
-          500: '#13b6cc',
-          600: '#0d93a8',
-          700: '#107687',
-          800: '#16606e',
-          900: '#164e5b',
-          950: '#082f3a',
+          50: 'rgb(var(--primary-50) / <alpha-value>)',
+          100: 'rgb(var(--primary-100) / <alpha-value>)',
+          200: 'rgb(var(--primary-200) / <alpha-value>)',
+          300: 'rgb(var(--primary-300) / <alpha-value>)',
+          400: 'rgb(var(--primary-400) / <alpha-value>)',
+          500: 'rgb(var(--primary-500) / <alpha-value>)',
+          600: 'rgb(var(--primary-600) / <alpha-value>)',
+          700: 'rgb(var(--primary-700) / <alpha-value>)',
+          800: 'rgb(var(--primary-800) / <alpha-value>)',
+          900: 'rgb(var(--primary-900) / <alpha-value>)',
+          950: 'rgb(var(--primary-950) / <alpha-value>)',
         },
       },
       boxShadow: {

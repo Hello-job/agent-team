@@ -1,0 +1,14 @@
+{
+  "name": "agent-team-workspace",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "dev": "npm --prefix backend run tauri:dev",
+    "start": "npm run dev",
+    "build": "npm --prefix backend run tauri:build",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "backend:dev": "npm --prefix backend run tauri:dev",
+    "backend:build": "npm --prefix backend run tauri:build"
+  }
+}
