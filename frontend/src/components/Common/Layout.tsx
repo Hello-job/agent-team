@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Users, Bot, Play, Home, Settings, Network } from 'lucide-react'
+import { Users, Bot, Play, Home, Settings } from 'lucide-react'
 import clsx from 'clsx'
+import logoIcon from '@/assets/icons/logo.png'
 
 const navItems = [
   { path: '/', label: '首页', icon: Home },
@@ -19,9 +20,7 @@ export default function Layout() {
       <aside className="fixed inset-y-0 left-0 w-[232px] bg-sidebar border-r border-line flex flex-col">
         {/* Brand */}
         <div className="flex items-center gap-3 h-16 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500/15 ring-1 ring-primary-500/25">
-            <Network className="h-[18px] w-[18px] text-primary-400" />
-          </div>
+          <img src={logoIcon} alt="Agent Team" className="h-10 w-10 flex-shrink-0" />
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight text-ink">Agent Team</div>
             <div className="text-[11px] text-ink-faint">多 agent 编排</div>
